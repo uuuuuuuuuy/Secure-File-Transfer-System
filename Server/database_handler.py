@@ -1,3 +1,4 @@
+import ast
 import threading
 import os
 import sqlite3
@@ -29,14 +30,16 @@ class DatabaseHandler:
         self.connection = None
         if self.is_database_exists():
             try:
-                self.connection = sqlite3.connect(DATABASE_FILE)
+                self.connection = sqlite3.connect(
+                    DATABASE_FILE, check_same_thread=False)
             except sqlite3.Error as e:
                 print(f"Error connecting to database '{DATABASE_FILE}': {e}")
 
         else:
             print("Creating a new database...")
             try:
-                self.connection = sqlite3.connect(DATABASE_FILE)
+                self.connection = sqlite3.connect(
+                    DATABASE_FILE, check_same_thread=False)
                 self.connection.executescript(DATABASE_SCHEMA)
                 self.connection.commit()
                 print(f"Database '{DATABASE_FILE}' created successfully")
@@ -76,6 +79,8 @@ class DatabaseHandler:
                     "INSERT INTO clients (ClientID, Name, PublicKey, LastSeen, AESKey) VALUES (?, ?, ?, ?, ?)",
                     (client_id, client_name, public_key, last_seen, aes_key))
                 connection.commit()
+
+        return client_id
 
     @staticmethod
     def is_database_exists():
@@ -121,13 +126,27 @@ class DatabaseHandler:
                 return result[0]
 
     def get_client_name(self, client_id):
+        normalized_id = self._normalize_client_id(client_id)
         with self.lock:
             with self.connection as connection:
                 cursor = connection.cursor()
                 query = "SELECT Name FROM clients WHERE ClientID = ?"
-                cursor.execute(query, (client_id,))
+                cursor.execute(query, (normalized_id,))
                 result = cursor.fetchone()
                 return result[0] if result is not None else None
+
+    def does_client_match_id(self, client_name, client_id):
+        normalized_id = self._normalize_client_id(client_id)
+        if normalized_id is None:
+            return False
+
+        with self.lock:
+            with self.connection as connection:
+                cursor = connection.cursor()
+                cursor.execute(
+                    "SELECT 1 FROM clients WHERE Name = ? AND ClientID = ?",
+                    (client_name, normalized_id))
+                return cursor.fetchone() is not None
 
     def get_AES_key(self, client_name):
         client_name = str(client_name)
@@ -158,13 +177,16 @@ class DatabaseHandler:
                 connection.commit()
 
     def update_last_seen(self, client_id):
-        client_id = str(client_id)
+        normalized_id = self._normalize_client_id(client_id)
+        if normalized_id is None:
+            return
+
         with self.lock:
             with self.connection as connection:
                 cursor = connection.cursor()
                 last_seen = str(datetime.now())
                 cursor.execute(
-                    "UPDATE clients SET LastSeen = ? WHERE ClientID = ?", (last_seen, client_id))
+                    "UPDATE clients SET LastSeen = ? WHERE ClientID = ?", (last_seen, normalized_id))
                 connection.commit()
 
     @staticmethod
@@ -173,20 +195,93 @@ class DatabaseHandler:
         return current_time.strftime("%Y-%m-%d %H:%M:%S")
 
     def update_file_info(self, client_id, client_name, file_name):
+        normalized_id = self._normalize_client_id(client_id)
+        if normalized_id is None:
+            return
+
         with self.lock:
             with self.connection as connection:
                 cursor = connection.cursor()
                 file_path = os.path.join(client_name, file_name)
                 cursor.execute(
-                    "UPDATE files SET FileName = ?, PathName = ? WHERE ID = ?", (str(
-                        file_name), str(file_path), str(client_id)))
+                    """
+                    INSERT INTO files (ID, FileName, PathName, Verified)
+                    VALUES (?, ?, ?, 0)
+                    ON CONFLICT(ID) DO UPDATE SET
+                        FileName = excluded.FileName,
+                        PathName = excluded.PathName,
+                        Verified = 0
+                    """,
+                    (normalized_id, str(file_name), str(file_path)))
                 connection.commit()
 
     def update_crc(self, client_id, crc):
+        normalized_id = self._normalize_client_id(client_id)
+        if normalized_id is None:
+            return
 
         with self.lock:
             with self.connection as connection:
                 cursor = connection.cursor()
                 cursor.execute(
-                    "UPDATE files SET Verified = ? WHERE ID = ?", (crc, str(client_id)))
+                    "UPDATE files SET Verified = ? WHERE ID = ?", (crc, normalized_id))
                 connection.commit()
+
+    def list_files_for_client(self, client_id):
+        normalized_id = self._normalize_client_id(client_id)
+        if normalized_id is None:
+            return []
+
+        with self.lock:
+            with self.connection as connection:
+                cursor = connection.cursor()
+                cursor.execute(
+                    "SELECT FileName, PathName, Verified FROM files WHERE ID = ?",
+                    (normalized_id,))
+                rows = cursor.fetchall()
+
+        files = []
+        for row in rows:
+            files.append({
+                "file_name": row[0],
+                "path_name": row[1],
+                "verified": bool(row[2])
+            })
+        return files
+
+    @staticmethod
+    def _normalize_client_id(client_id):
+        if client_id is None:
+            return None
+
+        if isinstance(client_id, memoryview):
+            client_id = client_id.tobytes()
+
+        if isinstance(client_id, bytearray):
+            client_id = bytes(client_id)
+
+        if isinstance(client_id, bytes):
+            return client_id
+
+        if isinstance(client_id, str):
+            candidate = client_id.strip()
+            if not candidate:
+                return None
+
+            try:
+                return bytes.fromhex(candidate)
+            except ValueError:
+                pass
+
+            if candidate.startswith("b'") or candidate.startswith('b"'):
+                try:
+                    literal = ast.literal_eval(candidate)
+                    if isinstance(literal, (bytes, bytearray)):
+                        return bytes(literal)
+                except (ValueError, SyntaxError):
+                    pass
+
+            return candidate.encode()
+
+        raise TypeError(
+            f"Unsupported client id type: {type(client_id)}")

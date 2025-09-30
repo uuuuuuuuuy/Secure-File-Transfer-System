@@ -13,6 +13,7 @@ The full project specifications can be found [here](readme/project_specification
 - [Getting Started](#getting-started)
 - [Features](#features)
 - [Communication Protocol](#communication-protocol)
+- [Minimal Web UI](#minimal-web-ui)
 - [Encryption](#encryption)
 - [Payload Content](#payload-content)
 - [Vulnerabilities and Weaknesses](#vulnerabilities-and-weaknesses)
@@ -48,6 +49,68 @@ To use the project, follow these steps:
 3. The Python server should also be running and configured to communicate with clients.
 
 4. Run the client program to register with the server (if not registered) or perform other file transfer operations.
+
+## Minimal Web UI
+
+The repository now includes two lightweight browser-based helpers implemented with Flask to streamline the end-to-end workflow.
+
+### Server 控制台（HTTP 接入层）
+
+服务器端提供了一个非常朴素的 Web 界面，每一步都直接映射到原有协议：注册、上传公钥、提交文件以及 CRC 回执。它只是对既有 Python 逻辑的薄封装，方便调试最小可用流程。
+
+1. Install the server dependencies:
+
+   ```bash
+   cd Server
+   pip install -r requirements.txt
+   ```
+
+2. Start the HTTP service (it can run alongside the legacy TCP server):
+
+   ```bash
+   flask --app webui.app run --host 0.0.0.0 --port 5000
+   ```
+
+3. 打开 `http://localhost:5000`，即可按顺序使用基础表单：
+
+   - 注册或登录指定客户端；
+   - 在浏览器中生成或粘贴公钥，完成密钥交换（私钥不会离开浏览器）；
+   - 上传经 AES 加密的文件，让服务器按原逻辑解密并计算 CRC；
+   - 通过按钮确认 CRC 状态，并查看该客户端的上传记录。
+
+> **说明**：该界面不会新增业务判断，所有请求仍落在现有的数据库、加密与文件处理模块中。
+
+### 客户端本地 WebUI（仅监听 127.0.0.1）
+
+客户端目录下的本地面板聚焦于读取和维护 `transfer.info`、`me.info`、密钥文件以及待发送的本地文件。它和服务器端职责清晰分离，只负责触发客户端应做的动作。
+
+1. 安装客户端 WebUI 依赖：
+
+   ```bash
+   cd Client
+   pip install -r requirements.txt
+   ```
+
+2. 启动本地服务（默认端口 5080，可通过环境变量 `CLIENT_WEBUI_PORT` 调整）：
+
+   ```bash
+   python -m webui.app
+   ```
+
+   或者使用 Flask 命令：
+
+   ```bash
+   flask --app webui.app run --host 127.0.0.1 --port 5080
+   ```
+
+3. 打开 `http://127.0.0.1:5080`，即可：
+
+   - 查看服务器地址、客户端 ID、AES 会话状态以及公钥指纹等基础信息；
+   - 使用简洁表单发起注册或登录；
+   - 生成/轮换 RSA 密钥对、上传公钥并与服务器协商 AES；
+   - 将文件保存到 `Client/uploads/` 并更新 `transfer.info`，随后继续运行原生 C++ 客户端完成发送。
+
+   所有敏感材料仍保存在客户端磁盘上，Web 界面只做状态展示与操作入口。
 
 ## Features
 

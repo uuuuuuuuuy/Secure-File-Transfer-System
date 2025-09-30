@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>客户端本地面板</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+  </head>
+  <body>
+    <header class="page-header">
+      <h1>安全文件传输 · 客户端面板</h1>
+      <p>查看本地配置、注册状态，并管理公钥与待发送文件。</p>
+    </header>
+
+    <main class="layout">
+      <section class="panel">
+        <h2>当前配置</h2>
+        <dl class="summary-list">
+          <div>
+            <dt>服务器地址</dt>
+            <dd id="summary-server">-</dd>
+          </div>
+          <div>
+            <dt>客户端名称</dt>
+            <dd id="summary-name">-</dd>
+          </div>
+          <div>
+            <dt>客户端 ID</dt>
+            <dd id="summary-id">-</dd>
+          </div>
+          <div>
+            <dt>AES 会话</dt>
+            <dd id="summary-aes">未协商</dd>
+          </div>
+          <div>
+            <dt>公钥指纹</dt>
+            <dd id="summary-fingerprint">-</dd>
+          </div>
+          <div>
+            <dt>公钥创建时间</dt>
+            <dd id="summary-key-created">-</dd>
+          </div>
+          <div>
+            <dt>待发送文件</dt>
+            <dd id="summary-file">-</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section class="panel">
+        <h2>注册与登录</h2>
+        <form id="register-form" class="form">
+          <label for="register-name">注册新客户端</label>
+          <div class="form-row">
+            <input id="register-name" name="clientName" type="text" required>
+            <button type="submit">注册</button>
+          </div>
+        </form>
+
+        <form id="login-form" class="form">
+          <label for="login-name">使用现有信息登录</label>
+          <div class="form-row">
+            <input id="login-name" name="clientName" type="text" required>
+            <input id="login-id" name="clientId" type="text" required placeholder="客户端 ID">
+            <button type="submit">登录</button>
+          </div>
+        </form>
+        <p id="auth-message" class="message"></p>
+      </section>
+
+      <section class="panel">
+        <h2>密钥管理</h2>
+        <div class="button-group">
+          <button id="generate-keys" type="button">生成/轮换密钥</button>
+          <button id="upload-key" type="button">上传公钥</button>
+          <a id="download-public" class="download" href="/public-key" download>导出公钥</a>
+        </div>
+        <p class="message" id="key-message"></p>
+      </section>
+
+      <section class="panel">
+        <h2>文件准备</h2>
+        <form id="file-form" class="form" enctype="multipart/form-data">
+          <label for="file-input">选择要发送的文件</label>
+          <input id="file-input" name="file" type="file" required>
+          <button type="submit">保存到 uploads/ 并更新 transfer.info</button>
+        </form>
+        <p class="message" id="file-message"></p>
+      </section>
+
+      <section class="panel">
+        <h2>操作日志</h2>
+        <ul id="log" class="log-list" aria-live="polite"></ul>
+      </section>
+    </main>
+
+    <footer class="page-footer">
+      <small>本地面板仅监听 127.0.0.1，所有敏感信息保留在客户端磁盘。</small>
+    </footer>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}" defer></script>
+  </body>
+</html>
