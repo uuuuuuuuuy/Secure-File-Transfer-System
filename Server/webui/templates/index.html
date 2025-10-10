@@ -9,7 +9,7 @@
   <body>
     <header class="page-header">
       <h1>安全文件传输 · 服务器面板</h1>
-      <p>通过最基本的 HTTP 表单完成注册、密钥交换、文件上传与 CRC 回执。</p>
+      <p>用于注册客户端、协商密钥并接收文件的轻量级管理界面。</p>
     </header>
 
     <main class="layout">
@@ -29,8 +29,8 @@
             <dd id="summary-aes-status">未协商</dd>
           </div>
           <div>
-            <dt>最近 CRC</dt>
-            <dd id="summary-crc-status">暂无上传</dd>
+            <dt>上传文件</dt>
+            <dd id="summary-file-count">0</dd>
           </div>
         </dl>
         <p id="global-message" class="message" role="status"></p>
@@ -86,15 +86,6 @@
       </section>
 
       <section class="panel">
-        <h2>4. CRC 回执</h2>
-        <div class="button-group">
-          <button id="ack-accept" type="button">CRC 正确</button>
-          <button id="ack-reject" type="button">CRC 错误</button>
-        </div>
-        <p class="message" id="ack-message"></p>
-      </section>
-
-      <section class="panel">
         <h2>上传记录</h2>
         <button id="refresh-files" type="button" class="refresh">刷新</button>
         <table class="file-table">
@@ -102,7 +93,7 @@
             <tr>
               <th>文件名</th>
               <th>保存路径</th>
-              <th>CRC 校验</th>
+              <th>CRC 状态</th>
             </tr>
           </thead>
           <tbody id="file-tbody">

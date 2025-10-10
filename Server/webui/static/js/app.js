@@ -14,6 +14,21 @@ function updateSessionSummary(data) {
   document.getElementById("summary-client-name").textContent = data.clientName || "-";
   document.getElementById("summary-client-id").textContent = data.clientId || "-";
   document.getElementById("summary-aes-status").textContent = data.hasAesKey ? "已就绪" : "未协商";
+  if (typeof data.fileCount === "number") {
+    document.getElementById("summary-file-count").textContent = String(data.fileCount);
+  }
+}
+
+function loadSession() {
+  return fetch("/api/session")
+    .then((res) => res.json())
+    .then((data) => {
+      updateSessionSummary(data);
+      return data;
+    })
+    .catch((error) => {
+      console.error("无法获取会话信息", error);
+    });
 }
 
 function refreshFiles() {
@@ -29,18 +44,15 @@ function refreshFiles() {
       }
       files.forEach((item) => {
         const tr = document.createElement("tr");
-        const verifiedText = item.verified ? "已确认" : "待确认";
+        const verifiedText = item.verified ? "客户端已确认" : "等待客户端确认";
         tr.innerHTML = `<td>${item.file_name}</td><td>${item.file_path}</td><td>${verifiedText}</td>`;
         tbody.appendChild(tr);
       });
+      loadSession();
     })
     .catch((err) => {
       console.error(err);
     });
-}
-
-function updateCrcStatus(text) {
-  document.getElementById("summary-crc-status").textContent = text;
 }
 
 function base64ToArrayBuffer(base64) {
@@ -145,8 +157,8 @@ function attachHandlers() {
       return;
     }
     setMessage("register-message", payload.message);
-    document.getElementById("summary-client-id").textContent = payload.clientId;
-    document.getElementById("summary-client-name").textContent = payload.clientName;
+    updateSessionSummary(payload);
+    loadSession();
   });
 
   document.getElementById("login-form").addEventListener("submit", async (event) => {
@@ -167,9 +179,7 @@ function attachHandlers() {
       return;
     }
     setMessage("login-message", payload.message);
-    document.getElementById("summary-client-id").textContent = payload.clientId;
-    document.getElementById("summary-client-name").textContent = payload.clientName;
-    document.getElementById("summary-aes-status").textContent = payload.hasAesKey ? "已就绪" : "未协商";
+    updateSessionSummary(payload);
     if (payload.encryptedAESKey) {
       try {
         await ensurePrivateKey();
@@ -181,6 +191,7 @@ function attachHandlers() {
       }
     }
     refreshFiles();
+    loadSession();
   });
 
   document.getElementById("key-form").addEventListener("submit", async (event) => {
@@ -202,7 +213,7 @@ function attachHandlers() {
       return;
     }
     setMessage("key-message", payload.message);
-    document.getElementById("summary-aes-status").textContent = payload.hasAesKey ? "已就绪" : "未协商";
+    updateSessionSummary(payload);
     if (payload.encryptedAESKey) {
       try {
         await ensurePrivateKey();
@@ -246,42 +257,24 @@ function attachHandlers() {
       setMessage("upload-message", payload.error || "上传失败", true);
       return;
     }
-    const message = `${payload.message || "文件已处理"} CRC: ${payload.crc}`;
-    setMessage("upload-message", message);
-    updateCrcStatus(`CRC ${payload.crc}`);
+    const messageParts = [];
+    if (payload.message) {
+      messageParts.push(payload.message);
+    }
+    if (typeof payload.crc !== "undefined") {
+      messageParts.push(`CRC: ${payload.crc}`);
+    }
+    setMessage("upload-message", messageParts.join(" · "));
     refreshFiles();
+    loadSession();
   });
-
-  document.getElementById("ack-accept").addEventListener("click", () => sendAck(true));
-  document.getElementById("ack-reject").addEventListener("click", () => sendAck(false));
   document.getElementById("refresh-files").addEventListener("click", refreshFiles);
 }
-
-async function sendAck(value) {
-  setMessage("ack-message", "");
-  const res = await fetch("/api/files/ack", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ verified: value }),
-  });
-  const payload = await res.json();
-  if (!res.ok) {
-    setMessage("ack-message", payload.error || "提交失败", true);
-    return;
-  }
-  setMessage("ack-message", payload.message);
-  refreshFiles();
-}
-
 function init() {
   attachHandlers();
-  fetch("/api/session")
-    .then((res) => res.json())
-    .then((data) => {
-      updateSessionSummary(data);
-      refreshFiles();
-    })
-    .catch((error) => console.error(error));
+  loadSession().finally(() => {
+    refreshFiles();
+  });
 }
 
 document.addEventListener("DOMContentLoaded", init);

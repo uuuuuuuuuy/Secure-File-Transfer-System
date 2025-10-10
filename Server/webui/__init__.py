@@ -56,11 +56,16 @@ def create_app():
         client_id = session.get("client_id")
         client_name = session.get("client_name")
         has_aes = "aes_key" in session
+        client_id_bytes = _session_client_id_bytes()
+        file_count = 0
+        if client_id_bytes:
+            file_count = len(database_handler.list_files_for_client(client_id_bytes))
         return jsonify(
             {
                 "clientId": client_id,
                 "clientName": client_name,
                 "hasAesKey": has_aes,
+                "fileCount": file_count,
             }
         )
 
@@ -211,33 +216,8 @@ def create_app():
         return jsonify(
             {
                 "crc": crc_value,
-                "message": "文件上传并保存成功，请确认 CRC。",
+                "message": "文件已成功接收并保存。",
                 "fileSize": file_size,
-            }
-        )
-
-    @app.post("/api/files/ack")
-    def acknowledge_crc():
-        if "client_name" not in session:
-            return jsonify({"error": "请先注册或登录客户端"}), 401
-
-        payload = request.get_json(silent=True) or {}
-        verified_value = payload.get("verified")
-
-        if isinstance(verified_value, str):
-            verified = verified_value.lower() in {"true", "1", "yes", "valid"}
-        else:
-            verified = bool(verified_value)
-
-        client_id_bytes = _session_client_id_bytes()
-        database_handler.update_crc(client_id_bytes, verified)
-        if client_id_bytes:
-            database_handler.update_last_seen(client_id_bytes)
-
-        return jsonify(
-            {
-                "verified": verified,
-                "message": "CRC 状态已更新。",
             }
         )
 

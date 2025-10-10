@@ -9,6 +9,17 @@ function setText(id, text) {
   }
 }
 
+function formatDateTime(value) {
+  if (!value) {
+    return "-";
+  }
+  try {
+    return new Date(value).toLocaleString();
+  } catch (error) {
+    return value;
+  }
+}
+
 function setMessage(id, text, isError = false) {
   const el = $(id);
   if (!el) return;
@@ -40,8 +51,10 @@ function updateSummary(data) {
   setText("summary-id", data.clientId);
   setText("summary-file", data.filePath);
   setText("summary-fingerprint", data.publicKeyFingerprint);
-  setText("summary-key-created", data.publicKeyCreatedAt ? new Date(data.publicKeyCreatedAt).toLocaleString() : "-");
+  setText("summary-key-created", formatDateTime(data.publicKeyCreatedAt));
   setText("summary-aes", data.hasAesKey ? "已协商" : "未协商");
+  setText("summary-last-send", formatDateTime(data.lastSendAt));
+  setText("summary-last-file", data.lastSendFile);
 }
 
 async function postJson(url, payload) {
@@ -145,6 +158,29 @@ function bindForms() {
         setMessage("file-message", data.message || "文件已保存");
       } catch (error) {
         setMessage("file-message", error.message, true);
+      }
+    });
+  }
+
+  const sendButton = $("send-file");
+  if (sendButton) {
+    sendButton.addEventListener("click", async () => {
+      setMessage("send-message", "");
+      try {
+        const data = await postJson("/api/send", {});
+        const parts = [];
+        if (data.message) {
+          parts.push(data.message);
+        }
+        if (typeof data.serverCrc !== "undefined") {
+          parts.push(`CRC ${data.serverCrc}`);
+        }
+        if (typeof data.serverFileSize !== "undefined") {
+          parts.push(`原始大小 ${data.serverFileSize} 字节`);
+        }
+        setMessage("send-message", parts.join(" · ") || "文件已发送");
+      } catch (error) {
+        setMessage("send-message", error.message, true);
       }
     });
   }

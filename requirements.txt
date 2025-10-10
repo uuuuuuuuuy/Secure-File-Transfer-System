@@ -1,0 +1,4 @@
+# Combined dependencies for the Secure File Transfer System.
+# Installing from this file ensures both server and client tooling share the same environment.
+-r Server/requirements.txt
+-r Client/requirements.txt

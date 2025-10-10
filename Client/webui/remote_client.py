@@ -41,3 +41,12 @@ class RemoteClient:
         _, data = self._request("POST", "/api/key-exchange", json={"publicKey": public_key})
         return data
 
+    def upload_file(self, file_name: str, encrypted_file: str, file_size: int) -> Dict[str, Any]:
+        payload = {
+            "fileName": file_name,
+            "encryptedFile": encrypted_file,
+            "fileSize": file_size,
+        }
+        _, data = self._request("POST", "/api/files", json=payload)
+        return data
+

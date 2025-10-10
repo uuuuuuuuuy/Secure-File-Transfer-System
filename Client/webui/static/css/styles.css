@@ -19,7 +19,7 @@ body {
 }
 
 .layout {
-  max-width: 880px;
+  max-width: 960px;
   margin: 0 auto;
   padding: 1rem;
   display: grid;
@@ -62,18 +62,23 @@ body {
 .summary-list dd {
   margin: 0.2rem 0 0;
   font-size: 0.95rem;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.mono {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
 }
 
 .form {
   display: grid;
-  gap: 0.5rem;
+  gap: 0.75rem;
   margin-bottom: 1rem;
 }
 
-.form-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
+.form-control {
+  display: grid;
+  gap: 0.35rem;
 }
 
 .form input,
@@ -84,7 +89,7 @@ body {
 }
 
 .form input {
-  flex: 1 1 160px;
+  width: 100%;
   padding: 0.5rem;
   border: 1px solid #cbd5f5;
   border-radius: 4px;
@@ -100,6 +105,7 @@ body {
   border-radius: 4px;
   cursor: pointer;
   transition: background 0.2s;
+  align-self: start;
 }
 
 .form button:hover,
@@ -130,6 +136,19 @@ body {
 .message {
   min-height: 1.2rem;
   font-size: 0.9rem;
+}
+
+.hint {
+  display: block;
+  font-size: 0.8rem;
+  color: #6b7280;
+  font-weight: 400;
+}
+
+.hint-block {
+  margin: 0 0 0.75rem;
+  font-size: 0.9rem;
+  color: #4b5563;
 }
 
 .message.error {
@@ -167,5 +186,13 @@ body {
   .download {
     color: #5eead4;
     border-color: #134e4a;
+  }
+
+  .hint {
+    color: #94a3b8;
+  }
+
+  .hint-block {
+    color: #cbd5f5;
   }
 }

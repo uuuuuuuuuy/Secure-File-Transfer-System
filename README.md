@@ -16,13 +16,20 @@
 
 要成功编译并运行安全文件传输系统，需要安装以下软件和库：
 
-### Python 服务器端
+### Python 组件（服务器与 Web UI）
 
 - **Python**：请确保系统中安装了 Python 3.9 或兼容版本。
-- **Crypto.Cipher**：服务器端的加解密依赖 Crypto.Cipher，可通过以下命令安装 `pycryptodome`：
+- **虚拟环境**：推荐在仓库根目录创建并激活 `.venv` 作为共享运行环境：
   ```bash
-  pip install pycryptodome
+  cd Secure-File-Transfer-System
+  python -m venv .venv
+  source .venv/bin/activate  # Windows 使用 .venv\\Scripts\\activate
   ```
+- **依赖管理**：根目录提供整合后的 `requirements.txt`，可一次性安装服务器与客户端 Web UI 所需的全部 Python 依赖：
+  ```bash
+  pip install -r requirements.txt
+  ```
+  安装完成后，无论是运行服务器 HTTP 面板，还是本地客户端 UI，均复用同一套解释器与依赖。
 
 ### C++ 客户端
 
@@ -34,10 +41,11 @@
 
 使用项目时可按照以下步骤操作：
 
-1. 使用 C++ 编译客户端程序。
-2. 确保 `info.transfer` 文件中配置了服务器 IP、端口、客户端名称以及待发送文件路径。
-3. 启动并配置 Python 服务器，使其能与客户端通信。
-4. 运行客户端程序，若尚未注册则向服务器注册，或执行其他文件传输操作。
+1. 在仓库根目录创建并激活 `.venv`，随后执行 `pip install -r requirements.txt` 安装全部 Python 依赖。
+2. 使用 C++ 编译客户端程序。
+3. 确保 `transfer.info` 文件中配置了服务器 IP、端口、客户端名称以及待发送文件路径。
+4. 通过 Python 服务器或 Web UI 启动服务器端组件，使其能与客户端通信并接收文件。
+5. 运行客户端程序或使用本地 Web UI，完成注册、密钥协商与文件发送。
 
 ## 最简 Web UI
 
@@ -45,27 +53,21 @@
 
 ### 服务器控制台（HTTP 接入层）
 
-服务器端提供了一个非常朴素的 Web 界面，每一步都直接映射到原有协议：注册、上传公钥、提交文件以及 CRC 回执。它只是对既有 Python 逻辑的薄封装，方便调试最小可用流程。
+服务器端提供了一个用于注册客户端、协商密钥并接收文件的 Web 面板，不再包含额外的调试或 CRC 回执按钮，专注于“接收并查看”这一职责。运行前仅需在仓库根目录使用统一的虚拟环境安装依赖。
 
-1. 安装服务器依赖：
+1. （已在根目录激活 `.venv` 并安装依赖后）在 `Server/` 目录启动 HTTP 服务，可与传统 TCP 服务器并行运行：
 
    ```bash
    cd Server
-   pip install -r requirements.txt
-   ```
-
-2. 启动 HTTP 服务（可以与传统 TCP 服务器并行运行）：
-
-   ```bash
    flask --app webui.app run --host 0.0.0.0 --port 5000
    ```
 
-3. 打开 `http://localhost:5000`，即可按顺序使用基础表单：
+2. 打开 `http://localhost:5000`，即可按顺序使用基础表单：
 
    - 注册或登录指定客户端；
    - 在浏览器中生成或粘贴公钥，完成密钥交换（私钥不会离开浏览器）；
-   - 上传经 AES 加密的文件，让服务器按原逻辑解密并计算 CRC；
-   - 通过按钮确认 CRC 状态，并查看该客户端的上传记录。
+   - 上传经 AES 加密的文件，让服务器按原逻辑解密、入库并展示；
+   - 查看服务器端记录的文件列表及 CRC 状态（仅显示，不再在 WebUI 中手动确认）。
 
 > **说明**：该界面不会新增业务判断，所有请求仍落在现有的数据库、加密与文件处理模块中。
 
@@ -75,33 +77,29 @@
 
 ### 客户端本地 WebUI（仅监听 127.0.0.1）
 
-客户端目录下的本地面板聚焦于读取和维护 `transfer.info`、`me.info`、密钥文件以及待发送的本地文件。它与服务器端职责清晰分离，只负责触发客户端应执行的动作。
+客户端目录下的本地面板聚焦于读取和维护 `transfer.info`、`me.info`、密钥文件以及待发送的本地文件。它与服务器端职责清晰分离，只负责触发客户端应执行的动作。Python 依赖已通过根目录 `requirements.txt` 安装，无需在此处重复安装。
 
-1. 安装客户端 WebUI 依赖：
+1. 启动本地服务（默认端口 5080，可通过环境变量 `CLIENT_WEBUI_PORT` 调整）：
 
    ```bash
    cd Client
-   pip install -r requirements.txt
-   ```
-
-2. 启动本地服务（默认端口 5080，可通过环境变量 `CLIENT_WEBUI_PORT` 调整）：
-
-   ```bash
    python -m webui.app
    ```
 
    或使用 Flask 命令：
 
    ```bash
+   cd Client
    flask --app webui.app run --host 127.0.0.1 --port 5080
    ```
 
-3. 打开 `http://127.0.0.1:5080`，即可：
+2. 打开 `http://127.0.0.1:5080`，即可：
 
    - 查看服务器地址、客户端 ID、AES 会话状态以及公钥指纹等基础信息；
    - 使用简洁表单发起注册或登录；
    - 生成或轮换 RSA 密钥对、上传公钥并与服务器协商 AES；
-   - 将文件保存到 `Client/uploads/` 并更新 `transfer.info`，随后继续运行原生 C++ 客户端完成发送。
+   - 将文件保存到 `Client/uploads/` 并更新 `transfer.info`；
+   - 在浏览器中直接触发加密与发送动作（会读取 AES 会话密钥、对本地文件进行 AES-CBC 加密，并调用服务器 Web 接口上传）。
 
    所有敏感材料仍保存在客户端磁盘上，Web 界面仅提供状态展示和操作入口。
 
