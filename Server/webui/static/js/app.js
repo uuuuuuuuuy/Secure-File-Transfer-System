@@ -245,6 +245,16 @@ function init() {
     refreshAll();
   });
 
+  const openStorageButton = document.getElementById("open-storage");
+  if (openStorageButton) {
+    openStorageButton.addEventListener("click", () => {
+      const browser = window.open("/files-browser", "_blank");
+      if (browser) {
+        browser.opener = null;
+      }
+    });
+  }
+
   refreshAll().then(() => {
     scheduleAutoRefresh();
   });

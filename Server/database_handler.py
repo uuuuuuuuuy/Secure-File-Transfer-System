@@ -417,6 +417,30 @@ class DatabaseHandler:
             )
         return transfers
 
+    def list_storage_directories(self) -> List[str]:
+        """Return absolute directories that contain saved transfer files."""
+        with self.lock:
+            with self.connection as connection:
+                cursor = connection.cursor()
+                cursor.execute("SELECT DISTINCT SavedPath FROM transfers WHERE SavedPath != ''")
+                rows = cursor.fetchall()
+
+        directories: List[str] = []
+        seen = set()
+        for (path,) in rows:
+            if not path:
+                continue
+            directory = os.path.dirname(path)
+            if not directory:
+                continue
+            normalized = os.path.abspath(directory)
+            if normalized not in seen:
+                seen.add(normalized)
+                directories.append(normalized)
+
+        directories.sort(key=lambda item: item.lower())
+        return directories
+
     def get_overview_stats(self) -> Dict[str, int]:
         with self.lock:
             with self.connection as connection:
