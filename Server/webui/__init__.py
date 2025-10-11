@@ -1,8 +1,10 @@
+import base64
+import binascii
 import os
 import sys
 from datetime import datetime
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, session
 
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 PARENT_DIR = os.path.dirname(CURRENT_DIR)
@@ -10,6 +12,13 @@ if PARENT_DIR not in sys.path:
     sys.path.append(PARENT_DIR)
 
 from database_handler import DatabaseHandler  # noqa: E402  pylint: disable=wrong-import-position
+from encryption_handler import (  # noqa: E402  pylint: disable=wrong-import-position
+    EncryptionHandler,
+)
+from files_handler import FilesHandler  # noqa: E402  pylint: disable=wrong-import-position
+from verification import (  # noqa: E402  pylint: disable=wrong-import-position
+    is_valid_client_name,
+)
 
 
 def create_app():
@@ -21,6 +30,21 @@ def create_app():
     app.config["SECRET_KEY"] = os.environ.get("WEBUI_SECRET_KEY", "development-secret-key")
 
     database_handler = DatabaseHandler()
+    encryption_handler = EncryptionHandler()
+    files_handler = FilesHandler()
+
+    def get_remote_ip():
+        forwarded_for = request.headers.get("X-Forwarded-For")
+        if forwarded_for:
+            return forwarded_for.split(",")[0].strip()
+        return request.remote_addr
+
+    def require_active_client():
+        client_id = session.get("client_id")
+        client_name = session.get("client_name")
+        if not client_id or not client_name:
+            return None
+        return client_id, client_name
 
     @app.route("/")
     def index():
@@ -42,6 +66,177 @@ def create_app():
         limit = max(1, min(limit, 500))
         transfers = database_handler.list_transfers(client_id, limit)
         return jsonify({"transfers": transfers})
+
+    @app.post("/api/register")
+    def register_client():
+        payload = request.get_json(silent=True) or {}
+        client_name = str(payload.get("clientName", "")).strip()
+        if not client_name:
+            return jsonify({"error": "请输入客户端名称"}), 400
+        if not is_valid_client_name(client_name):
+            return jsonify({"error": "客户端名称仅支持字母、数字与空格"}), 400
+        if database_handler.is_client_exists(client_name):
+            return jsonify({"error": "该客户端名称已被注册，请直接登录"}), 409
+
+        try:
+            client_id_bytes = database_handler.register_client(client_name, get_remote_ip())
+        except Exception as exc:  # pylint: disable=broad-except
+            return jsonify({"error": f"注册失败：{exc}"}), 500
+
+        client_id_hex = client_id_bytes.hex()
+        session["client_id"] = client_id_hex
+        session["client_name"] = client_name
+        session.modified = True
+
+        database_handler.update_last_seen(client_id_hex, get_remote_ip())
+
+        return (
+            jsonify(
+                {
+                    "message": "注册成功",
+                    "clientId": client_id_hex,
+                    "clientName": client_name,
+                    "hasPublicKey": False,
+                    "hasAesKey": False,
+                }
+            ),
+            201,
+        )
+
+    @app.post("/api/login")
+    def login_client():
+        payload = request.get_json(silent=True) or {}
+        client_name = str(payload.get("clientName", "")).strip()
+        client_id = str(payload.get("clientId", "")).strip()
+
+        if not client_name or not client_id:
+            return jsonify({"error": "请输入客户端名称与 ID"}), 400
+        if not database_handler.does_client_match_id(client_name, client_id):
+            return jsonify({"error": "未找到匹配的客户端，请确认名称与 ID"}), 404
+
+        session["client_id"] = client_id
+        session["client_name"] = client_name
+        session.modified = True
+
+        has_public_key = database_handler.is_RSA_key_exists(client_name)
+        encrypted_aes = None
+        message = "登录成功"
+
+        if has_public_key:
+            try:
+                encryption_handler.generate_AES_key(client_name)
+                encrypted_aes = encryption_handler.get_encrypted_AES_key(client_name)
+                message = "登录成功，已生成新的 AES 密钥"
+            except Exception as exc:  # pylint: disable=broad-except
+                return jsonify({"error": f"生成 AES 密钥失败：{exc}"}), 500
+        else:
+            message = "登录成功，请先上传公钥并执行密钥交换"
+
+        database_handler.update_last_seen(client_id, get_remote_ip())
+
+        return jsonify(
+            {
+                "message": message,
+                "clientId": client_id,
+                "clientName": client_name,
+                "encryptedAESKey": encrypted_aes,
+                "hasPublicKey": has_public_key,
+                "hasAesKey": bool(encrypted_aes),
+            }
+        )
+
+    @app.post("/api/key-exchange")
+    def upload_public_key():
+        identity = require_active_client()
+        if identity is None:
+            return jsonify({"error": "会话已失效，请重新登录后再试"}), 401
+
+        client_id, client_name = identity
+        payload = request.get_json(silent=True) or {}
+        public_key = str(payload.get("publicKey", "")).strip()
+        if not public_key:
+            return jsonify({"error": "缺少公钥内容"}), 400
+
+        try:
+            database_handler.update_public_RSA_key(client_name, public_key)
+            encryption_handler.generate_AES_key(client_name)
+            encrypted_aes = encryption_handler.get_encrypted_AES_key(client_name)
+        except Exception as exc:  # pylint: disable=broad-except
+            return jsonify({"error": f"处理公钥时发生错误：{exc}"}), 500
+
+        database_handler.update_last_seen(client_id, get_remote_ip())
+
+        return jsonify(
+            {
+                "message": "公钥已更新并生成新的 AES 密钥",
+                "clientId": client_id,
+                "clientName": client_name,
+                "encryptedAESKey": encrypted_aes,
+                "hasPublicKey": True,
+                "hasAesKey": True,
+            }
+        )
+
+    @app.post("/api/files")
+    def upload_encrypted_file():
+        identity = require_active_client()
+        if identity is None:
+            return jsonify({"error": "会话已失效，请重新登录后再试"}), 401
+
+        client_id, client_name = identity
+        payload = request.get_json(silent=True) or {}
+
+        file_name = str(payload.get("fileName", "")).strip()
+        encrypted_file = payload.get("encryptedFile")
+        file_size = payload.get("fileSize")
+
+        if not file_name or not encrypted_file:
+            return jsonify({"error": "缺少文件名称或内容"}), 400
+
+        aes_key = database_handler.get_AES_key(client_name)
+        if not aes_key:
+            return jsonify({"error": "尚未生成 AES 密钥，请先完成密钥交换"}), 400
+
+        try:
+            encrypted_bytes = base64.b64decode(encrypted_file)
+        except (ValueError, binascii.Error) as exc:
+            return jsonify({"error": f"解析加密文件失败：{exc}"}), 400
+
+        try:
+            decrypted_content = encryption_handler.decrypt_file(encrypted_bytes, aes_key, file_name)
+        except Exception as exc:  # pylint: disable=broad-except
+            return jsonify({"error": f"解密文件失败：{exc}"}), 500
+
+        try:
+            saved_path = files_handler.save_decrypted_file(client_name, file_name, decrypted_content)
+        except Exception as exc:  # pylint: disable=broad-except
+            return jsonify({"error": f"保存文件失败：{exc}"}), 500
+
+        try:
+            database_handler.update_file_info(client_id, client_name, file_name)
+            database_handler.update_crc(client_id, False)
+            crc = encryption_handler.calculate_crc(client_name, file_name)
+            database_handler.record_transfer(
+                client_id,
+                client_name,
+                file_name,
+                int(file_size) if file_size is not None else 0,
+                saved_path,
+                get_remote_ip(),
+            )
+            database_handler.update_last_seen(client_id, get_remote_ip())
+        except Exception as exc:  # pylint: disable=broad-except
+            return jsonify({"error": f"更新数据库失败：{exc}"}), 500
+
+        response = {
+            "message": "文件接收成功",
+            "clientId": client_id,
+            "clientName": client_name,
+            "fileSize": int(file_size) if file_size is not None else 0,
+            "crc": crc,
+            "savedPath": saved_path,
+        }
+        return jsonify(response), 201
 
     @app.get("/files-browser")
     def files_browser():
