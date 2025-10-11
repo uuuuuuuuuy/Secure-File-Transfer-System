@@ -1,279 +1,252 @@
+const REFRESH_INTERVAL = 5000;
+
 const state = {
-  publicKey: null,
-  privateKey: null,
+  selectedClientId: null,
+  clients: [],
+  refreshTimer: null,
 };
 
-function setMessage(id, text, isError = false) {
-  const el = document.getElementById(id);
-  if (!el) return;
-  el.textContent = text || "";
-  el.classList.toggle("error", Boolean(text) && isError);
+function formatDate(value) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return `${date.toLocaleString()}`;
 }
 
-function updateSessionSummary(data) {
-  document.getElementById("summary-client-name").textContent = data.clientName || "-";
-  document.getElementById("summary-client-id").textContent = data.clientId || "-";
-  document.getElementById("summary-aes-status").textContent = data.hasAesKey ? "已就绪" : "未协商";
-  if (typeof data.fileCount === "number") {
-    document.getElementById("summary-file-count").textContent = String(data.fileCount);
+function formatSize(bytes) {
+  const num = Number(bytes);
+  if (Number.isNaN(num) || num <= 0) return "-";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  const exponent = Math.min(Math.floor(Math.log(num) / Math.log(1024)), units.length - 1);
+  const size = num / 1024 ** exponent;
+  return `${size.toFixed(size >= 100 || exponent === 0 ? 0 : 1)} ${units[exponent]}`;
+}
+
+function renderStatusPill(text, variant) {
+  const pill = document.createElement("span");
+  pill.classList.add("status-pill", variant);
+  pill.textContent = text;
+  return pill;
+}
+
+function createClientStatus(client) {
+  if (client.hasAesKey) {
+    return renderStatusPill("AES 已就绪", "ready");
+  }
+  if (client.hasPublicKey) {
+    return renderStatusPill("等待 AES 下发", "pending");
+  }
+  return renderStatusPill("尚未上传公钥", "error");
+}
+
+function clearElement(el) {
+  while (el.firstChild) {
+    el.removeChild(el.firstChild);
   }
 }
 
-function loadSession() {
-  return fetch("/api/session")
-    .then((res) => res.json())
-    .then((data) => {
-      updateSessionSummary(data);
-      return data;
-    })
-    .catch((error) => {
-      console.error("无法获取会话信息", error);
-    });
+function renderOverview(stats) {
+  document.getElementById("stat-clients").textContent = stats.clientCount ?? 0;
+  document.getElementById("stat-transfers").textContent = stats.transferCount ?? 0;
+  document.getElementById("stat-verified").textContent = stats.verifiedCount ?? 0;
 }
 
-function refreshFiles() {
-  fetch("/api/files")
-    .then((res) => res.json())
-    .then((payload) => {
-      const tbody = document.getElementById("file-tbody");
-      tbody.innerHTML = "";
-      const files = payload.files || [];
-      if (!files.length) {
-        tbody.innerHTML = '<tr><td colspan="3" class="empty">暂无记录</td></tr>';
-        return;
+function renderClients(clients) {
+  const tbody = document.getElementById("clients-tbody");
+  clearElement(tbody);
+
+  if (!clients.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty">暂无客户端</td></tr>';
+    return;
+  }
+
+  clients.forEach((client) => {
+    const tr = document.createElement("tr");
+    if (client.clientId === state.selectedClientId) {
+      tr.classList.add("is-selected");
+    }
+    tr.dataset.clientId = client.clientId;
+    const idCell = document.createElement("td");
+    const idCode = document.createElement("code");
+    idCode.textContent = client.clientId;
+    idCell.appendChild(idCode);
+    tr.appendChild(idCell);
+
+    const nameCell = document.createElement("td");
+    nameCell.textContent = client.clientName || "-";
+    tr.appendChild(nameCell);
+
+    const seenCell = document.createElement("td");
+    seenCell.textContent = formatDate(client.lastSeen);
+    tr.appendChild(seenCell);
+
+    const ipCell = document.createElement("td");
+    ipCell.textContent = client.lastIp || "-";
+    tr.appendChild(ipCell);
+
+    const countCell = document.createElement("td");
+    countCell.textContent = String(client.fileCount ?? 0);
+    tr.appendChild(countCell);
+
+    const statusCell = document.createElement("td");
+    statusCell.appendChild(createClientStatus(client));
+    tr.appendChild(statusCell);
+    tr.addEventListener("click", () => {
+      if (state.selectedClientId === client.clientId) {
+        state.selectedClientId = null;
+      } else {
+        state.selectedClientId = client.clientId;
       }
-      files.forEach((item) => {
-        const tr = document.createElement("tr");
-        const verifiedText = item.verified ? "客户端已确认" : "等待客户端确认";
-        tr.innerHTML = `<td>${item.file_name}</td><td>${item.file_path}</td><td>${verifiedText}</td>`;
-        tbody.appendChild(tr);
-      });
-      loadSession();
-    })
-    .catch((err) => {
-      console.error(err);
+      updateTransferFilter();
+      refreshTransfers();
+      renderClients(state.clients);
     });
-}
-
-function base64ToArrayBuffer(base64) {
-  const cleaned = base64.replace(/\s+/g, "");
-  const binary = window.atob(cleaned);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return bytes.buffer;
-}
-
-async function exportKey(key) {
-  const exported = await window.crypto.subtle.exportKey("spki", key);
-  return window.btoa(String.fromCharCode(...new Uint8Array(exported)));
-}
-
-async function exportPrivateKey(key) {
-  const exported = await window.crypto.subtle.exportKey("pkcs8", key);
-  return window.btoa(String.fromCharCode(...new Uint8Array(exported)));
-}
-
-async function importPrivateKey(base64) {
-  const keyBuffer = base64ToArrayBuffer(base64);
-  const privateKey = await window.crypto.subtle.importKey(
-    "pkcs8",
-    keyBuffer,
-    {
-      name: "RSA-OAEP",
-      hash: "SHA-256",
-    },
-    true,
-    ["decrypt"],
-  );
-  state.privateKey = privateKey;
-  return privateKey;
-}
-
-async function ensurePrivateKey() {
-  if (state.privateKey) {
-    return state.privateKey;
-  }
-  const field = document.getElementById("private-key");
-  if (!field || !field.value.trim()) {
-    throw new Error("尚未生成或导入私钥");
-  }
-  return importPrivateKey(field.value.trim());
-}
-
-async function generateKeyPair() {
-  const keyPair = await window.crypto.subtle.generateKey(
-    {
-      name: "RSA-OAEP",
-      modulusLength: 2048,
-      publicExponent: new Uint8Array([0x01, 0x00, 0x01]),
-      hash: "SHA-256",
-    },
-    true,
-    ["encrypt", "decrypt"]
-  );
-  state.publicKey = keyPair.publicKey;
-  state.privateKey = keyPair.privateKey;
-  const publicKeyBase64 = await exportKey(keyPair.publicKey);
-  const privateKeyBase64 = await exportPrivateKey(keyPair.privateKey);
-  document.getElementById("public-key").value = publicKeyBase64;
-  const privateField = document.getElementById("private-key");
-  if (privateField) {
-    privateField.value = privateKeyBase64;
-  }
-  document.getElementById("key-message").textContent = "已生成新的密钥对，请复制并妥善保管私钥。";
-  console.info("新的密钥对已生成，私钥仅保留在浏览器内存中。");
-  console.info(privateKeyBase64);
-}
-
-async function decryptAesKey(encryptedBase64) {
-  const privateKey = await ensurePrivateKey();
-  const encryptedBytes = Uint8Array.from(window.atob(encryptedBase64), (c) => c.charCodeAt(0));
-  const decrypted = await window.crypto.subtle.decrypt({ name: "RSA-OAEP" }, privateKey, encryptedBytes);
-  return window.btoa(String.fromCharCode(...new Uint8Array(decrypted)));
-}
-
-function attachHandlers() {
-  const privateField = document.getElementById("private-key");
-  if (privateField) {
-    privateField.addEventListener("input", () => {
-      state.privateKey = null;
-    });
-  }
-
-  document.getElementById("register-form").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    setMessage("register-message", "");
-    const clientName = new FormData(event.currentTarget).get("clientName");
-    const res = await fetch("/api/register", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ clientName }),
-    });
-    const payload = await res.json();
-    if (!res.ok) {
-      setMessage("register-message", payload.error || "注册失败", true);
-      return;
-    }
-    setMessage("register-message", payload.message);
-    updateSessionSummary(payload);
-    loadSession();
+    tbody.appendChild(tr);
   });
+}
 
-  document.getElementById("login-form").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    setMessage("login-message", "");
-    const data = new FormData(event.currentTarget);
-    const res = await fetch("/api/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        clientName: data.get("clientName"),
-        clientId: data.get("clientId"),
-      }),
-    });
-    const payload = await res.json();
-    if (!res.ok) {
-      setMessage("login-message", payload.error || "登录失败", true);
-      return;
-    }
-    setMessage("login-message", payload.message);
-    updateSessionSummary(payload);
-    if (payload.encryptedAESKey) {
-      try {
-        await ensurePrivateKey();
-        const aesKey = await decryptAesKey(payload.encryptedAESKey);
-        document.getElementById("aes-key").value = aesKey;
-      } catch (error) {
-        console.warn(error);
-        setMessage("key-message", error.message, true);
-      }
-    }
-    refreshFiles();
-    loadSession();
+function renderTransfers(transfers) {
+  const tbody = document.getElementById("transfers-tbody");
+  clearElement(tbody);
+
+  if (!transfers.length) {
+    tbody.innerHTML = '<tr><td colspan="7" class="empty">暂无文件传输记录</td></tr>';
+    return;
+  }
+
+  transfers.forEach((item) => {
+    const tr = document.createElement("tr");
+    const timeCell = document.createElement("td");
+    timeCell.textContent = formatDate(item.receivedAt);
+    tr.appendChild(timeCell);
+
+    const clientCell = document.createElement("td");
+    const nameBlock = document.createElement("div");
+    nameBlock.textContent = item.clientName || "-";
+    const idCode = document.createElement("code");
+    idCode.textContent = item.clientId;
+    clientCell.appendChild(nameBlock);
+    clientCell.appendChild(idCode);
+    tr.appendChild(clientCell);
+
+    const nameCell = document.createElement("td");
+    nameCell.textContent = item.fileName;
+    tr.appendChild(nameCell);
+
+    const sizeCell = document.createElement("td");
+    sizeCell.classList.add("file-size");
+    sizeCell.textContent = formatSize(item.fileSize);
+    tr.appendChild(sizeCell);
+
+    const pathCell = document.createElement("td");
+    pathCell.textContent = item.savedPath;
+    tr.appendChild(pathCell);
+
+    const ipCell = document.createElement("td");
+    ipCell.textContent = item.sourceIp || "-";
+    tr.appendChild(ipCell);
+
+    const statusCell = document.createElement("td");
+    const status = item.verified
+      ? renderStatusPill("已确认", "ready")
+      : renderStatusPill("待确认", "pending");
+    statusCell.appendChild(status);
+    tr.appendChild(statusCell);
+    tbody.appendChild(tr);
   });
+}
 
-  document.getElementById("key-form").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    setMessage("key-message", "");
-    const publicKey = document.getElementById("public-key").value.trim();
-    if (!publicKey) {
-      setMessage("key-message", "请先提供公钥", true);
-      return;
-    }
-    const res = await fetch("/api/key-exchange", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ publicKey }),
-    });
-    const payload = await res.json();
-    if (!res.ok) {
-      setMessage("key-message", payload.error || "密钥交换失败", true);
-      return;
-    }
-    setMessage("key-message", payload.message);
-    updateSessionSummary(payload);
-    if (payload.encryptedAESKey) {
-      try {
-        await ensurePrivateKey();
-        const aesKey = await decryptAesKey(payload.encryptedAESKey);
-        document.getElementById("aes-key").value = aesKey;
-      } catch (error) {
-        console.warn(error);
-        setMessage("key-message", error.message, true);
+function updateTransferFilter() {
+  const label = document.getElementById("transfer-filter");
+  if (!state.selectedClientId) {
+    label.textContent = "当前显示：全部客户端";
+    return;
+  }
+  const target = state.clients.find((item) => item.clientId === state.selectedClientId);
+  if (!target) {
+    label.textContent = "当前显示：全部客户端";
+    state.selectedClientId = null;
+    return;
+  }
+  label.textContent = `当前显示：${target.clientName || "未命名客户端"}（ID：${target.clientId}）`;
+}
+
+async function fetchJson(url) {
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`请求失败：${response.status}`);
+  }
+  return response.json();
+}
+
+async function refreshOverview() {
+  try {
+    const data = await fetchJson("/api/overview");
+    renderOverview(data);
+  } catch (error) {
+    console.error("获取概览失败", error);
+  }
+}
+
+async function refreshClients() {
+  try {
+    const data = await fetchJson("/api/clients");
+    state.clients = data.clients || [];
+    if (state.selectedClientId) {
+      const exists = state.clients.some((client) => client.clientId === state.selectedClientId);
+      if (!exists) {
+        state.selectedClientId = null;
       }
     }
-  });
-
-  document.getElementById("generate-keypair").addEventListener("click", () => {
-    generateKeyPair().catch((error) => {
-      setMessage("key-message", error.message, true);
-    });
-  });
-
-  document.getElementById("upload-form").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    setMessage("upload-message", "");
-    const fileInput = document.getElementById("file-input");
-    if (!fileInput.files.length) {
-      setMessage("upload-message", "请选择文件", true);
-      return;
-    }
-    const file = fileInput.files[0];
-    const arrayBuffer = await file.arrayBuffer();
-    const base64 = window.btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
-    const res = await fetch("/api/files", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        fileName: file.name,
-        fileSize: file.size,
-        encryptedFile: base64,
-      }),
-    });
-    const payload = await res.json();
-    if (!res.ok) {
-      setMessage("upload-message", payload.error || "上传失败", true);
-      return;
-    }
-    const messageParts = [];
-    if (payload.message) {
-      messageParts.push(payload.message);
-    }
-    if (typeof payload.crc !== "undefined") {
-      messageParts.push(`CRC: ${payload.crc}`);
-    }
-    setMessage("upload-message", messageParts.join(" · "));
-    refreshFiles();
-    loadSession();
-  });
-  document.getElementById("refresh-files").addEventListener("click", refreshFiles);
+    renderClients(state.clients);
+    updateTransferFilter();
+  } catch (error) {
+    console.error("获取客户端列表失败", error);
+  }
 }
+
+async function refreshTransfers() {
+  const params = new URLSearchParams();
+  if (state.selectedClientId) {
+    params.set("clientId", state.selectedClientId);
+    params.set("limit", "100");
+  } else {
+    params.set("limit", "50");
+  }
+  const query = params.toString();
+  try {
+    const url = query ? `/api/transfers?${query}` : "/api/transfers";
+    const data = await fetchJson(url);
+    renderTransfers(data.transfers || []);
+  } catch (error) {
+    console.error("获取传输记录失败", error);
+  }
+}
+
+async function refreshAll() {
+  await Promise.all([refreshOverview(), refreshClients()]);
+  await refreshTransfers();
+}
+
+function scheduleAutoRefresh() {
+  if (state.refreshTimer) {
+    clearInterval(state.refreshTimer);
+  }
+  state.refreshTimer = setInterval(() => {
+    refreshOverview();
+    refreshClients().then(refreshTransfers);
+  }, REFRESH_INTERVAL);
+}
+
 function init() {
-  attachHandlers();
-  loadSession().finally(() => {
-    refreshFiles();
+  document.getElementById("refresh-all").addEventListener("click", () => {
+    refreshAll();
+  });
+
+  refreshAll().then(() => {
+    scheduleAutoRefresh();
   });
 }
 

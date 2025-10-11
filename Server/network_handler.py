@@ -2,6 +2,8 @@ import base64
 import os
 import re
 
+from typing import Optional, Tuple
+
 from verification import is_valid_client_id, is_valid_client_name
 
 try:
@@ -43,6 +45,13 @@ class NetworkHandler:
         self.response_generator = ResponseGenerator()
         self.client_id = str()
         self.client_name = str()
+        self.client_ip: Optional[str] = None
+
+    def set_client_address(self, client_address: Optional[Tuple[str, int]]):
+        if client_address is None:
+            self.client_ip = None
+            return
+        self.client_ip = client_address[0]
 
     def parse_request(self, request: bytes):
         decoded_request = request.decode()
@@ -59,7 +68,7 @@ class NetworkHandler:
         if self.database_handler.is_client_exists(self.client_name):
             return self.response_generator.response(REGISTRATION_FAIL, request_parameters)
 
-        self.database_handler.register_client(self.client_name)
+        self.database_handler.register_client(self.client_name, self.client_ip)
 
         self.client_id = self.database_handler.get_client_id(self.client_name)
 
@@ -67,6 +76,7 @@ class NetworkHandler:
             self.client_name)
 
         self.response_generator.set_client_id(self.client_id.hex())
+        self.database_handler.update_last_seen(self.client_id, self.client_ip)
         return self.response_generator.response(REGISTRATION_ACCEPT, request_parameters)
 
     def handle_reconnect_request(self, request_parameters):
@@ -85,7 +95,7 @@ class NetworkHandler:
         encrypted_aes = self.encryption_handler.get_encrypted_AES_key(
             self.client_name)
 
-        self.database_handler.update_last_seen(self.client_id)
+        self.database_handler.update_last_seen(self.client_id, self.client_ip)
 
         self.response_generator.set_client_id(self.client_id)
         self.response_generator.set_encrypted_aes(encrypted_aes)
@@ -101,7 +111,7 @@ class NetworkHandler:
         encrypted_aes = self.encryption_handler.get_encrypted_AES_key(
             self.client_name)
 
-        self.database_handler.update_last_seen(self.client_id)
+        self.database_handler.update_last_seen(self.client_id, self.client_ip)
 
         self.response_generator.set_encrypted_aes(encrypted_aes)
         return self.response_generator.response(RSA_KEY_ACCEPT, request_parameters)
@@ -119,7 +129,7 @@ class NetworkHandler:
 
         decrypted_file_content = self.encryption_handler.decrypt_file(
             encrypted_file, aes_key, file_name)
-        self.files_handler.save_decrypted_file(
+        saved_path = self.files_handler.save_decrypted_file(
             self.client_name, file_name, decrypted_file_content)
 
         # Update database with file info
@@ -130,7 +140,15 @@ class NetworkHandler:
         crc = self.encryption_handler.calculate_crc(
             self.client_name, file_name)
 
-        self.database_handler.update_last_seen(self.client_id)
+        self.database_handler.record_transfer(
+            self.client_id,
+            self.client_name,
+            file_name,
+            file_size,
+            saved_path,
+            self.client_ip,
+        )
+        self.database_handler.update_last_seen(self.client_id, self.client_ip)
 
         self.response_generator.set_crc(crc)
         return self.response_generator.response(FILE_TRANSFER_SUCCESS, request_parameters)
@@ -145,7 +163,7 @@ class NetworkHandler:
 
         self.database_handler.update_crc(self.client_id, crc_request)
 
-        self.database_handler.update_last_seen(self.client_id)
+        self.database_handler.update_last_seen(self.client_id, self.client_ip)
 
         return self.response_generator.response(CRC_FINISH, request_parameters)
 
@@ -154,6 +172,6 @@ class NetworkHandler:
         # request 1103 (FILE_TRANSFER_REQUEST) is about to be resent
 
     def handle_unknown_request(self, request_parameters):
-        self.database_handler.update_last_seen(self.client_id)
+        self.database_handler.update_last_seen(self.client_id, self.client_ip)
 
         return self.response_generator.response(INVALID_REQUEST, request_parameters)
