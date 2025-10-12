@@ -216,6 +216,7 @@ def create_app():
             database_handler.update_file_info(client_id, client_name, file_name)
             database_handler.update_crc(client_id, False)
             crc = encryption_handler.calculate_crc(client_name, file_name)
+            crc_hex = f"{int(crc):08X}"
             database_handler.record_transfer(
                 client_id,
                 client_name,
@@ -223,6 +224,7 @@ def create_app():
                 int(file_size) if file_size is not None else 0,
                 saved_path,
                 get_remote_ip(),
+                crc_hex,
             )
             database_handler.update_last_seen(client_id, get_remote_ip())
         except Exception as exc:  # pylint: disable=broad-except
@@ -233,10 +235,29 @@ def create_app():
             "clientId": client_id,
             "clientName": client_name,
             "fileSize": int(file_size) if file_size is not None else 0,
-            "crc": crc,
+            "crc": crc_hex,
             "savedPath": saved_path,
         }
         return jsonify(response), 201
+
+    @app.post("/api/transfers/<int:transfer_id>/verify")
+    def verify_transfer(transfer_id: int):
+        payload = request.get_json(silent=True) or {}
+        verified = payload.get("verified", True)
+        try:
+            updated = database_handler.set_transfer_verified(transfer_id, bool(verified))
+        except TypeError:
+            return jsonify({"error": "请求参数无效"}), 400
+        except Exception as exc:  # pylint: disable=broad-except
+            return jsonify({"error": f"更新校验状态失败：{exc}"}), 500
+
+        if not updated:
+            return jsonify({"error": "未找到对应的传输记录"}), 404
+
+        message = "已标记为待确认"
+        if bool(verified):
+            message = "CRC 校验已确认"
+        return jsonify({"message": f"传输记录 {transfer_id} {message}"})
 
     @app.get("/files-browser")
     def files_browser():

@@ -3,7 +3,10 @@ const REFRESH_INTERVAL = 5000;
 const state = {
   selectedClientId: null,
   clients: [],
+  transfers: [],
   refreshTimer: null,
+  verifyingIds: new Set(),
+  feedbackTimer: null,
 };
 
 function formatDate(value) {
@@ -29,6 +32,55 @@ function renderStatusPill(text, variant) {
   pill.classList.add("status-pill", variant);
   pill.textContent = text;
   return pill;
+}
+
+function formatCrc(value) {
+  if (value === null || typeof value === "undefined" || value === "") {
+    return "-";
+  }
+  if (typeof value === "number") {
+    return value.toString(16).toUpperCase().padStart(8, "0");
+  }
+  const trimmed = String(value).trim();
+  if (!trimmed) {
+    return "-";
+  }
+  return trimmed.toUpperCase();
+}
+
+function showFeedback(message, variant = "info") {
+  const container = document.getElementById("feedback");
+  if (!container) return;
+
+  if (state.feedbackTimer) {
+    clearTimeout(state.feedbackTimer);
+    state.feedbackTimer = null;
+  }
+
+  const variants = ["is-info", "is-success", "is-error"];
+  container.classList.remove(...variants);
+  container.textContent = message || "";
+
+  if (!message) {
+    container.setAttribute("hidden", "hidden");
+    return;
+  }
+
+  if (variant === "error") {
+    container.classList.add("is-error");
+  } else if (variant === "success") {
+    container.classList.add("is-success");
+  } else {
+    container.classList.add("is-info");
+  }
+
+  container.removeAttribute("hidden");
+  state.feedbackTimer = setTimeout(() => {
+    container.setAttribute("hidden", "hidden");
+    container.textContent = "";
+    container.classList.remove(...variants);
+    state.feedbackTimer = null;
+  }, 6000);
 }
 
 function createClientStatus(client) {
@@ -112,12 +164,13 @@ function renderTransfers(transfers) {
   clearElement(tbody);
 
   if (!transfers.length) {
-    tbody.innerHTML = '<tr><td colspan="7" class="empty">暂无文件传输记录</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" class="empty">暂无文件传输记录</td></tr>';
     return;
   }
 
   transfers.forEach((item) => {
     const tr = document.createElement("tr");
+    tr.dataset.transferId = item.transferId;
     const timeCell = document.createElement("td");
     timeCell.textContent = formatDate(item.receivedAt);
     tr.appendChild(timeCell);
@@ -148,11 +201,27 @@ function renderTransfers(transfers) {
     ipCell.textContent = item.sourceIp || "-";
     tr.appendChild(ipCell);
 
+    const crcCell = document.createElement("td");
+    crcCell.classList.add("mono");
+    crcCell.textContent = formatCrc(item.crcValue);
+    tr.appendChild(crcCell);
+
     const statusCell = document.createElement("td");
     const status = item.verified
       ? renderStatusPill("已确认", "ready")
       : renderStatusPill("待确认", "pending");
     statusCell.appendChild(status);
+    if (!item.verified) {
+      const action = document.createElement("button");
+      action.type = "button";
+      action.classList.add("action-button");
+      action.textContent = state.verifyingIds.has(item.transferId) ? "更新中…" : "标记已确认";
+      action.disabled = state.verifyingIds.has(item.transferId);
+      action.addEventListener("click", () => {
+        confirmTransfer(item.transferId);
+      });
+      statusCell.appendChild(action);
+    }
     tr.appendChild(statusCell);
     tbody.appendChild(tr);
   });
@@ -219,9 +288,37 @@ async function refreshTransfers() {
   try {
     const url = query ? `/api/transfers?${query}` : "/api/transfers";
     const data = await fetchJson(url);
-    renderTransfers(data.transfers || []);
+    state.transfers = data.transfers || [];
+    renderTransfers(state.transfers);
   } catch (error) {
     console.error("获取传输记录失败", error);
+  }
+}
+
+async function confirmTransfer(transferId) {
+  if (state.verifyingIds.has(transferId)) {
+    return;
+  }
+  state.verifyingIds.add(transferId);
+  renderTransfers(state.transfers);
+  try {
+    const response = await fetch(`/api/transfers/${transferId}/verify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ verified: true }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.error || "确认请求失败");
+    }
+    showFeedback(data.message || "CRC 校验已确认", "success");
+    await refreshOverview();
+    await refreshTransfers();
+  } catch (error) {
+    showFeedback(`CRC 确认失败：${error.message}`, "error");
+  } finally {
+    state.verifyingIds.delete(transferId);
+    renderTransfers(state.transfers);
   }
 }
 

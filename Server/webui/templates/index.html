@@ -13,6 +13,7 @@
     </header>
 
     <main class="layout">
+      <div id="feedback" class="feedback" role="status" aria-live="polite"></div>
       <section class="panel panel-overview">
         <div class="panel-header">
           <h2>运行概览</h2>
@@ -75,11 +76,12 @@
                 <th>大小</th>
                 <th>保存路径</th>
                 <th>来源 IP</th>
+                <th>CRC 值</th>
                 <th>CRC 状态</th>
               </tr>
             </thead>
             <tbody id="transfers-tbody">
-              <tr><td colspan="7" class="empty">暂无文件传输记录</td></tr>
+              <tr><td colspan="8" class="empty">暂无文件传输记录</td></tr>
             </tbody>
           </table>
         </div>

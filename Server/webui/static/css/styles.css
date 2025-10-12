@@ -42,6 +42,38 @@ body {
   margin: 0 auto;
 }
 
+.feedback {
+  border-radius: 6px;
+  padding: 0.85rem 1rem;
+  font-size: 0.95rem;
+  line-height: 1.4;
+  border: 1px solid transparent;
+  background: #e0f2fe;
+  color: #0c4a6e;
+}
+
+.feedback[hidden] {
+  display: none;
+}
+
+.feedback.is-info {
+  background: #e0f2fe;
+  color: #0c4a6e;
+  border-color: rgba(14, 116, 144, 0.25);
+}
+
+.feedback.is-success {
+  background: #dcfce7;
+  color: #14532d;
+  border-color: rgba(22, 101, 52, 0.25);
+}
+
+.feedback.is-error {
+  background: #fee2e2;
+  color: #991b1b;
+  border-color: rgba(185, 28, 28, 0.3);
+}
+
 .panel {
   background: #fff;
   border: 1px solid #e5e7eb;
@@ -227,6 +259,35 @@ body {
 .status-pill.error {
   background: rgba(239, 68, 68, 0.15);
   color: #b91c1c;
+}
+
+.mono {
+  font-family: "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+.action-button {
+  margin-left: 0.75rem;
+  padding: 0.35rem 0.75rem;
+  font: inherit;
+  border-radius: 6px;
+  border: 1px solid #1d4ed8;
+  background: rgba(29, 78, 216, 0.1);
+  color: #1d4ed8;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease, opacity 0.2s ease;
+}
+
+.action-button:hover {
+  background: #1d4ed8;
+  color: #fff;
+}
+
+.action-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  background: rgba(148, 163, 184, 0.35);
+  border-color: rgba(148, 163, 184, 0.65);
+  color: #475569;
 }
 
 .file-size {

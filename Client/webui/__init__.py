@@ -13,6 +13,7 @@ from werkzeug.utils import secure_filename
 
 from .config import (
     DEFAULT_BIND_PORT,
+    DEFAULT_REMOTE_HTTP_PORT,
     TransferFile,
     get_base_dir,
     resolve_remote_base,
@@ -72,6 +73,13 @@ def create_app() -> Flask:
 
         return {
             "serverEndpoint": transfer_info.server_tcp_endpoint if transfer_info else None,
+            "serverHost": transfer_info.server_host if transfer_info else None,
+            "serverTcpPort": transfer_info.server_tcp_port if transfer_info else None,
+            "serverHttpPort": transfer_info.server_http_port_or_default()
+            if transfer_info
+            else DEFAULT_REMOTE_HTTP_PORT,
+            "serverHttpPortConfigured": transfer_info.server_http_port if transfer_info else None,
+            "serverHttpEndpoint": transfer_info.server_http_endpoint() if transfer_info else None,
             "clientName": transfer_info.client_name if transfer_info else me_info.client_name,
             "clientId": me_info.client_id,
             "filePath": transfer_info.file_path if transfer_info else None,
@@ -130,6 +138,75 @@ def create_app() -> Flask:
             }
         )
         return jsonify(response), 201
+
+    @app.post("/api/server")
+    def update_server():
+        payload = request.get_json(silent=True) or {}
+        server_host = str(payload.get("serverHost", "")).strip()
+        if not server_host:
+            return jsonify({"error": "请输入服务器 IP 或域名"}), 400
+
+        try:
+            server_tcp_port = int(payload.get("serverTcpPort"))
+        except (TypeError, ValueError):
+            return jsonify({"error": "TCP 端口格式不正确"}), 400
+
+        if not 1 <= server_tcp_port <= 65535:
+            return jsonify({"error": "TCP 端口号应在 1-65535 之间"}), 400
+
+        http_port_provided = "serverHttpPort" in payload
+        http_port_raw = payload.get("serverHttpPort")
+        http_port: Optional[int]
+        if http_port_raw in (None, "", "default"):
+            http_port = None
+        else:
+            try:
+                http_port = int(http_port_raw)
+            except (TypeError, ValueError):
+                return jsonify({"error": "HTTP 接口端口格式不正确"}), 400
+            if not 1 <= http_port <= 65535:
+                return jsonify({"error": "HTTP 接口端口号应在 1-65535 之间"}), 400
+
+        existing_name = None
+        existing_file = None
+        existing_http_port = None
+        if transfer_file.exists():
+            try:
+                info = transfer_file.read()
+                existing_name = info.client_name
+                existing_file = info.file_path
+                existing_http_port = info.server_http_port
+            except Exception:
+                existing_name = None
+                existing_file = None
+                existing_http_port = None
+
+        if http_port_provided:
+            http_port_to_save = http_port
+        else:
+            http_port_to_save = existing_http_port
+
+        try:
+            transfer_file.write(
+                server_host,
+                server_tcp_port,
+                client_name=existing_name,
+                file_path=existing_file,
+                server_http_port=http_port_to_save,
+            )
+        except Exception as exc:  # pylint: disable=broad-except
+            return jsonify({"error": f"写入 transfer.info 失败: {exc}"}), 500
+
+        nonlocal remote_client
+        remote_client = None
+
+        response = serialize_state()
+        response.update(
+            {
+                "message": "服务器配置已更新",
+            }
+        )
+        return jsonify(response)
 
     @app.post("/api/login")
     def login():

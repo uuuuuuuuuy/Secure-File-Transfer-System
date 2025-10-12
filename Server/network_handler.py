@@ -139,6 +139,7 @@ class NetworkHandler:
 
         crc = self.encryption_handler.calculate_crc(
             self.client_name, file_name)
+        crc_hex = f"{int(crc):08X}"
 
         self.database_handler.record_transfer(
             self.client_id,
@@ -147,10 +148,11 @@ class NetworkHandler:
             file_size,
             saved_path,
             self.client_ip,
+            crc_hex,
         )
         self.database_handler.update_last_seen(self.client_id, self.client_ip)
 
-        self.response_generator.set_crc(crc)
+        self.response_generator.set_crc(crc_hex)
         return self.response_generator.response(FILE_TRANSFER_SUCCESS, request_parameters)
 
     def handle_cksum_finish_request(self, request_parameters, request_code):

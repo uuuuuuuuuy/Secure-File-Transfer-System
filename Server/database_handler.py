@@ -35,7 +35,8 @@ TRANSFERS_SCHEMA = """
             SavedPath TEXT NOT NULL,
             SourceIP TEXT,
             ReceivedAt TEXT NOT NULL,
-            Verified BOOLEAN NOT NULL DEFAULT 0
+            Verified BOOLEAN NOT NULL DEFAULT 0,
+            CRC TEXT
         );
         CREATE INDEX IF NOT EXISTS idx_transfers_client ON transfers (ClientID);
         CREATE INDEX IF NOT EXISTS idx_transfers_received_at ON transfers (ReceivedAt DESC);
@@ -267,6 +268,36 @@ class DatabaseHandler:
                     (int(bool(crc)), normalized_id))
                 connection.commit()
 
+    def set_transfer_verified(self, transfer_id: int, verified: bool) -> bool:
+        """Mark a specific transfer row as verified/unverified."""
+
+        if not isinstance(transfer_id, int):
+            raise TypeError("transfer_id must be an integer")
+
+        with self.lock:
+            with self.connection as connection:
+                cursor = connection.cursor()
+                cursor.execute(
+                    "SELECT ClientID FROM transfers WHERE ID = ?",
+                    (transfer_id,),
+                )
+                row = cursor.fetchone()
+                if row is None:
+                    return False
+
+                client_id = row[0]
+                cursor.execute(
+                    "UPDATE transfers SET Verified = ? WHERE ID = ?",
+                    (int(bool(verified)), transfer_id),
+                )
+                if client_id is not None:
+                    cursor.execute(
+                        "UPDATE files SET Verified = ? WHERE ID = ?",
+                        (int(bool(verified)), client_id),
+                    )
+                connection.commit()
+        return True
+
     def list_files_for_client(self, client_id):
         normalized_id = self._normalize_client_id(client_id)
         if normalized_id is None:
@@ -289,7 +320,16 @@ class DatabaseHandler:
             })
         return files
 
-    def record_transfer(self, client_id, client_name, file_name, file_size, saved_path, source_ip=None):
+    def record_transfer(
+        self,
+        client_id,
+        client_name,
+        file_name,
+        file_size,
+        saved_path,
+        source_ip=None,
+        crc_value: Optional[str] = None,
+    ):
         normalized_id = self._normalize_client_id(client_id)
         if normalized_id is None:
             return
@@ -301,8 +341,17 @@ class DatabaseHandler:
                 cursor = connection.cursor()
                 cursor.execute(
                     """
-                    INSERT INTO transfers (ClientID, ClientName, FileName, FileSize, SavedPath, SourceIP, ReceivedAt)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO transfers (
+                        ClientID,
+                        ClientName,
+                        FileName,
+                        FileSize,
+                        SavedPath,
+                        SourceIP,
+                        ReceivedAt,
+                        CRC
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         normalized_id,
@@ -312,6 +361,7 @@ class DatabaseHandler:
                         str(saved_path),
                         source_ip,
                         timestamp,
+                        crc_value,
                     ),
                 )
                 connection.commit()
@@ -375,7 +425,7 @@ class DatabaseHandler:
                 if normalized_id is not None:
                     cursor.execute(
                         """
-                        SELECT ClientID, ClientName, FileName, FileSize, SavedPath, SourceIP, ReceivedAt, Verified
+                        SELECT ID, ClientID, ClientName, FileName, FileSize, SavedPath, SourceIP, ReceivedAt, Verified, CRC
                         FROM transfers
                         WHERE ClientID = ?
                         ORDER BY ReceivedAt DESC, ID DESC
@@ -386,7 +436,7 @@ class DatabaseHandler:
                 else:
                     cursor.execute(
                         """
-                        SELECT ClientID, ClientName, FileName, FileSize, SavedPath, SourceIP, ReceivedAt, Verified
+                        SELECT ID, ClientID, ClientName, FileName, FileSize, SavedPath, SourceIP, ReceivedAt, Verified, CRC
                         FROM transfers
                         ORDER BY ReceivedAt DESC, ID DESC
                         LIMIT ?
@@ -397,7 +447,8 @@ class DatabaseHandler:
 
         transfers: List[Dict[str, Any]] = []
         for row in rows:
-            client_id_bytes = row[0]
+            transfer_id = int(row[0])
+            client_id_bytes = row[1]
             client_id_hex = (
                 client_id_bytes.hex()
                 if isinstance(client_id_bytes, (bytes, bytearray))
@@ -405,14 +456,16 @@ class DatabaseHandler:
             )
             transfers.append(
                 {
+                    "transferId": transfer_id,
                     "clientId": client_id_hex,
-                    "clientName": row[1],
-                    "fileName": row[2],
-                    "fileSize": row[3],
-                    "savedPath": row[4],
-                    "sourceIp": row[5],
-                    "receivedAt": row[6],
-                    "verified": bool(row[7]),
+                    "clientName": row[2],
+                    "fileName": row[3],
+                    "fileSize": row[4],
+                    "savedPath": row[5],
+                    "sourceIp": row[6],
+                    "receivedAt": row[7],
+                    "verified": bool(row[8]),
+                    "crcValue": row[9],
                 }
             )
         return transfers
@@ -465,6 +518,10 @@ class DatabaseHandler:
                 columns = {row[1] for row in cursor.fetchall()}
                 if "LastIP" not in columns:
                     cursor.execute("ALTER TABLE clients ADD COLUMN LastIP TEXT")
+                cursor.execute("PRAGMA table_info(transfers)")
+                transfer_columns = {row[1] for row in cursor.fetchall()}
+                if "CRC" not in transfer_columns:
+                    cursor.execute("ALTER TABLE transfers ADD COLUMN CRC TEXT")
                 connection.executescript(TRANSFERS_SCHEMA)
                 connection.commit()
 

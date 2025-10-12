@@ -9,6 +9,17 @@ function setText(id, text) {
   }
 }
 
+function setInputValue(id, value) {
+  const input = $(id);
+  if (!input) return;
+  if (document.activeElement === input) return;
+  if (value === null || typeof value === "undefined") {
+    input.value = "";
+  } else {
+    input.value = value;
+  }
+}
+
 function formatDateTime(value) {
   if (!value) {
     return "-";
@@ -46,7 +57,16 @@ async function fetchState() {
 }
 
 function updateSummary(data) {
+  setText("summary-server-host", data.serverHost);
   setText("summary-server", data.serverEndpoint);
+  if (data.serverHttpEndpoint) {
+    const suffix = data.serverHttpPortConfigured ? "" : "（默认端口）";
+    setText("summary-server-http", `${data.serverHttpEndpoint}${suffix}`);
+  } else if (data.serverHost) {
+    setText("summary-server-http", `${data.serverHost}:${data.serverHttpPort}（默认端口）`);
+  } else {
+    setText("summary-server-http", null);
+  }
   setText("summary-name", data.clientName);
   setText("summary-id", data.clientId);
   setText("summary-file", data.filePath);
@@ -55,6 +75,11 @@ function updateSummary(data) {
   setText("summary-aes", data.hasAesKey ? "已协商" : "未协商");
   setText("summary-last-send", formatDateTime(data.lastSendAt));
   setText("summary-last-file", data.lastSendFile);
+
+  setInputValue("server-host", data.serverHost || "");
+  setInputValue("server-tcp-port", data.serverTcpPort || "");
+  const httpPortValue = data.serverHttpPortConfigured;
+  setInputValue("server-http-port", httpPortValue === null || typeof httpPortValue === "undefined" ? "" : httpPortValue);
 }
 
 async function postJson(url, payload) {
@@ -88,6 +113,26 @@ async function postForm(url, formData) {
 }
 
 function bindForms() {
+  const serverForm = $("server-form");
+  if (serverForm) {
+    serverForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      setMessage("server-message", "");
+      const formData = new FormData(serverForm);
+      try {
+        const payload = {
+          serverHost: formData.get("serverHost"),
+          serverTcpPort: formData.get("serverTcpPort"),
+          serverHttpPort: formData.get("serverHttpPort"),
+        };
+        const data = await postJson("/api/server", payload);
+        setMessage("server-message", data.message || "服务器配置已更新");
+      } catch (error) {
+        setMessage("server-message", error.message, true);
+      }
+    });
+  }
+
   const registerForm = $("register-form");
   if (registerForm) {
     registerForm.addEventListener("submit", async (event) => {
