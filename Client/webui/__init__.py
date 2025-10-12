@@ -37,6 +37,13 @@ def create_app() -> Flask:
     app.config["SECRET_KEY"] = os.environ.get("CLIENT_WEBUI_SECRET_KEY", "client-webui-dev")
     app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024  # 50 MB for local uploads
 
+    try:
+        transfer_file.ensure_defaults()
+    except Exception as exc:  # pylint: disable=broad-except
+        # 读取或写入默认配置失败时记录日志，但不中断应用启动。
+        # 随后的请求仍会在访问 transfer.info 时返回具体的错误信息。
+        app.logger.warning("无法初始化 transfer.info 默认配置：%s", exc)
+
     remote_client: Optional[RemoteClient] = None
 
     def get_remote_client() -> RemoteClient:

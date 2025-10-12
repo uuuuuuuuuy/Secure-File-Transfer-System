@@ -10,6 +10,8 @@ from typing import Optional
 DEFAULT_REMOTE_HTTP_PORT = int(os.environ.get("CLIENT_WEBUI_REMOTE_HTTP_PORT", 5000))
 DEFAULT_REMOTE_BASE_URL = os.environ.get("CLIENT_WEBUI_REMOTE_BASE_URL")
 DEFAULT_BIND_PORT = int(os.environ.get("CLIENT_WEBUI_PORT", 5080))
+DEFAULT_SERVER_HOST = os.environ.get("CLIENT_WEBUI_DEFAULT_SERVER_HOST", "127.0.0.1")
+DEFAULT_SERVER_TCP_PORT = int(os.environ.get("CLIENT_WEBUI_DEFAULT_SERVER_TCP_PORT", 9934))
 
 
 @dataclass
@@ -92,6 +94,30 @@ class TransferFile:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.write_text("\n".join(lines) + "\n", encoding="utf-8")
         return TransferInfo(server_host, int(server_tcp_port), client_name, file_path, server_http_port)
+
+    def ensure_defaults(
+        self,
+        *,
+        server_host: str = DEFAULT_SERVER_HOST,
+        server_tcp_port: int = DEFAULT_SERVER_TCP_PORT,
+        server_http_port: Optional[int] = None,
+    ) -> TransferInfo:
+        """Ensure transfer.info exists with sensible defaults.
+
+        Returns the existing or newly written configuration so the caller can
+        immediately use it for state serialisation.
+        """
+
+        if self.exists():
+            return self.read()
+
+        return self.write(
+            server_host,
+            server_tcp_port,
+            client_name=None,
+            file_path=None,
+            server_http_port=server_http_port,
+        )
 
 
 def resolve_remote_base(info: TransferInfo) -> str:
