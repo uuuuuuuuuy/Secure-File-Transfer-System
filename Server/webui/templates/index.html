@@ -34,6 +34,32 @@
           </div>
         </dl>
         <p class="muted">数据每 5 秒自动刷新一次，也可以手动点击上方按钮立即更新。</p>
+        <div class="server-meta" aria-live="polite">
+          <h3>服务器连接信息</h3>
+          <dl class="server-meta-grid">
+            <div>
+              <dt>服务器 IP</dt>
+              <dd><code id="server-tcp-host">-</code></dd>
+            </div>
+            <div>
+              <dt>TCP 端口</dt>
+              <dd><code id="server-tcp-port">-</code></dd>
+            </div>
+            <div>
+              <dt>监听地址</dt>
+              <dd><code id="server-tcp-bind">-</code></dd>
+            </div>
+            <div>
+              <dt>控制台地址</dt>
+              <dd><code id="server-http-url">-</code></dd>
+            </div>
+            <div>
+              <dt>HTTP 端口</dt>
+              <dd><code id="server-http-port">-</code></dd>
+            </div>
+          </dl>
+          <p class="muted">在客户端配置中填入上述 IP 与端口即可与服务器建立连接。</p>
+        </div>
       </section>
 
       <section class="panel panel-clients">

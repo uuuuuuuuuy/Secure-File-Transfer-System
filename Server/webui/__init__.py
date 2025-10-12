@@ -1,8 +1,10 @@
 import base64
 import binascii
 import os
+import socket
 import sys
 from datetime import datetime
+from urllib.parse import urlparse
 
 from flask import Flask, jsonify, render_template, request, session
 
@@ -53,6 +55,47 @@ def create_app():
     @app.get("/api/overview")
     def get_overview():
         return jsonify(database_handler.get_overview_stats())
+
+    @app.get("/api/server-info")
+    def get_server_info():
+        parsed = urlparse(request.host_url)
+        http_scheme = parsed.scheme or request.environ.get("wsgi.url_scheme", "http")
+        http_host = parsed.hostname or (request.host.split(":", 1)[0] if request.host else "localhost")
+
+        http_port = parsed.port
+        if http_port is None:
+            environ_port = request.environ.get("SERVER_PORT")
+            try:
+                http_port = int(environ_port)
+            except (TypeError, ValueError):
+                http_port = 80 if http_scheme == "http" else 443
+
+        tcp_bind_host = (
+            os.environ.get("SERVER_TCP_HOST")
+            or os.environ.get("SERVER_HOST")
+            or os.environ.get("TCP_HOST")
+            or "0.0.0.0"
+        )
+        tcp_host = tcp_bind_host
+        if tcp_host in {None, "", "0.0.0.0", "::"}:
+            tcp_host = http_host
+            if tcp_host in {None, "", "0.0.0.0", "::"}:
+                try:
+                    tcp_host = socket.gethostbyname(socket.gethostname())
+                except OSError:
+                    tcp_host = "127.0.0.1"
+
+        return jsonify(
+            {
+                "httpScheme": http_scheme,
+                "httpHost": http_host,
+                "httpPort": http_port,
+                "httpUrl": request.host_url.rstrip("/"),
+                "tcpHost": tcp_host,
+                "tcpBindHost": tcp_bind_host,
+                "tcpPort": files_handler.port,
+            }
+        )
 
     @app.get("/api/clients")
     def list_clients():

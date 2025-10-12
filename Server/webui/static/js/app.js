@@ -7,6 +7,7 @@ const state = {
   refreshTimer: null,
   verifyingIds: new Set(),
   feedbackTimer: null,
+  serverInfo: null,
 };
 
 function formatDate(value) {
@@ -103,6 +104,36 @@ function renderOverview(stats) {
   document.getElementById("stat-clients").textContent = stats.clientCount ?? 0;
   document.getElementById("stat-transfers").textContent = stats.transferCount ?? 0;
   document.getElementById("stat-verified").textContent = stats.verifiedCount ?? 0;
+}
+
+function renderServerInfo(info) {
+  state.serverInfo = info;
+  const tcpHostEl = document.getElementById("server-tcp-host");
+  const tcpPortEl = document.getElementById("server-tcp-port");
+  const tcpBindEl = document.getElementById("server-tcp-bind");
+  const httpUrlEl = document.getElementById("server-http-url");
+  const httpPortEl = document.getElementById("server-http-port");
+
+  if (tcpHostEl) {
+    tcpHostEl.textContent = info?.tcpHost || "-";
+  }
+  if (tcpPortEl) {
+    tcpPortEl.textContent = info?.tcpPort != null ? String(info.tcpPort) : "-";
+  }
+  if (tcpBindEl) {
+    const bind = info?.tcpBindHost;
+    if (!bind || bind === "0.0.0.0" || bind === "::") {
+      tcpBindEl.textContent = "监听全部网卡";
+    } else {
+      tcpBindEl.textContent = bind;
+    }
+  }
+  if (httpUrlEl) {
+    httpUrlEl.textContent = info?.httpUrl || "-";
+  }
+  if (httpPortEl) {
+    httpPortEl.textContent = info?.httpPort != null ? String(info.httpPort) : "-";
+  }
 }
 
 function renderClients(clients) {
@@ -259,6 +290,15 @@ async function refreshOverview() {
   }
 }
 
+async function refreshServerInfo() {
+  try {
+    const data = await fetchJson("/api/server-info");
+    renderServerInfo(data);
+  } catch (error) {
+    console.error("获取服务器信息失败", error);
+  }
+}
+
 async function refreshClients() {
   try {
     const data = await fetchJson("/api/clients");
@@ -323,7 +363,7 @@ async function confirmTransfer(transferId) {
 }
 
 async function refreshAll() {
-  await Promise.all([refreshOverview(), refreshClients()]);
+  await Promise.all([refreshOverview(), refreshClients(), refreshServerInfo()]);
   await refreshTransfers();
 }
 
@@ -333,6 +373,7 @@ function scheduleAutoRefresh() {
   }
   state.refreshTimer = setInterval(() => {
     refreshOverview();
+    refreshServerInfo();
     refreshClients().then(refreshTransfers);
   }, REFRESH_INTERVAL);
 }
