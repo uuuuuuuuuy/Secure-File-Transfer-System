@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Any, Dict, Optional, Tuple
 
 import requests
+from requests import exceptions as requests_exceptions
 
 
 class RemoteClientError(Exception):
@@ -17,7 +18,12 @@ class RemoteClient:
 
     def _request(self, method: str, path: str, *, json: Optional[Dict[str, Any]] = None) -> Tuple[int, Dict[str, Any]]:
         url = f"{self.base_url}{path}"
-        response = self.session.request(method, url, json=json, timeout=10)
+        try:
+            response = self.session.request(method, url, json=json, timeout=10)
+        except requests_exceptions.RequestException as exc:
+            raise RemoteClientError(
+                f"无法连接到服务器 {self.base_url}：{exc}"
+            ) from exc
         try:
             payload = response.json()
         except ValueError:
