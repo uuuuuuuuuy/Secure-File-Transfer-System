@@ -113,6 +113,7 @@ function renderServerInfo(info) {
   const tcpBindEl = document.getElementById("server-tcp-bind");
   const httpUrlEl = document.getElementById("server-http-url");
   const httpPortEl = document.getElementById("server-http-port");
+  const lanHostsEl = document.getElementById("server-lan-hosts");
 
   if (tcpHostEl) {
     tcpHostEl.textContent = info?.tcpHost || "-";
@@ -133,6 +134,19 @@ function renderServerInfo(info) {
   }
   if (httpPortEl) {
     httpPortEl.textContent = info?.httpPort != null ? String(info.httpPort) : "-";
+  }
+  if (lanHostsEl) {
+    lanHostsEl.innerHTML = "";
+    const hosts = Array.isArray(info?.lanHosts) ? info.lanHosts.filter(Boolean) : [];
+    if (!hosts.length) {
+      lanHostsEl.textContent = "-";
+    } else {
+      hosts.forEach((host) => {
+        const code = document.createElement("code");
+        code.textContent = host;
+        lanHostsEl.appendChild(code);
+      });
+    }
   }
 }
 

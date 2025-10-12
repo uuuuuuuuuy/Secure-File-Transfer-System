@@ -41,6 +41,60 @@ def create_app():
             return forwarded_for.split(",")[0].strip()
         return request.remote_addr
 
+    def enumerate_lan_hosts(*candidates):
+        primary_hosts = []
+        loopback_hosts = []
+        seen = set()
+
+        def add_host(value):
+            if not value:
+                return
+            value = str(value).strip()
+            if not value or value in seen:
+                return
+            if value in {"0.0.0.0", "::"}:
+                return
+            seen.add(value)
+            if value.startswith("127."):
+                loopback_hosts.append(value)
+            else:
+                primary_hosts.append(value)
+
+        for item in candidates:
+            if isinstance(item, (list, tuple, set)):
+                for nested in item:
+                    add_host(nested)
+            else:
+                add_host(item)
+
+        hostname = socket.gethostname()
+        try:
+            add_host(socket.gethostbyname(hostname))
+        except OSError:
+            pass
+        try:
+            _, _, host_ips = socket.gethostbyname_ex(hostname)
+            add_host(host_ips)
+        except OSError:
+            pass
+        try:
+            for info in socket.getaddrinfo(None, 0, family=socket.AF_INET):
+                add_host(info[4][0])
+        except OSError:
+            pass
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+                sock.connect(("8.8.8.8", 80))
+                add_host(sock.getsockname()[0])
+        except OSError:
+            pass
+
+        combined = primary_hosts + loopback_hosts
+        if not combined:
+            combined.append("127.0.0.1")
+
+        return combined
+
     def require_active_client():
         client_id = session.get("client_id")
         client_name = session.get("client_name")
@@ -85,6 +139,14 @@ def create_app():
                 except OSError:
                     tcp_host = "127.0.0.1"
 
+        lan_hosts = enumerate_lan_hosts(
+            os.environ.get("SERVER_LAN_HOST"),
+            os.environ.get("LAN_HOST"),
+            tcp_host,
+            tcp_bind_host,
+            http_host,
+        )
+
         return jsonify(
             {
                 "httpScheme": http_scheme,
@@ -94,6 +156,7 @@ def create_app():
                 "tcpHost": tcp_host,
                 "tcpBindHost": tcp_bind_host,
                 "tcpPort": files_handler.port,
+                "lanHosts": lan_hosts,
             }
         )
 

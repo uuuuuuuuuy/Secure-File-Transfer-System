@@ -231,6 +231,24 @@ body {
   word-break: break-all;
 }
 
+.server-meta-grid dd.ip-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 1.6rem;
+  font-family: "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+.server-meta-grid dd.ip-list code {
+  display: inline-block;
+  padding: 0.1rem 0.45rem;
+  background: #eff6ff;
+  border: 1px solid rgba(37, 99, 235, 0.25);
+  border-radius: 999px;
+  color: #1d4ed8;
+}
+
 .table-wrapper {
   overflow-x: auto;
 }
