@@ -86,14 +86,18 @@ class TransferFile:
         file_path: Optional[str] = None,
         server_http_port: Optional[int] = None,
     ) -> TransferInfo:
-        lines = [f"{server_host}:{int(server_tcp_port)}"]
+        host = server_host.strip()
+        if not host:
+            raise ValueError("server_host 不能为空")
+
+        lines = [f"{host}:{int(server_tcp_port)}"]
         lines.append(client_name or "")
         lines.append(file_path or "")
         lines.append(str(server_http_port) if server_http_port is not None else "")
 
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        return TransferInfo(server_host, int(server_tcp_port), client_name, file_path, server_http_port)
+        return TransferInfo(host, int(server_tcp_port), client_name, file_path, server_http_port)
 
     def ensure_defaults(
         self,

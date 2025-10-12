@@ -5,6 +5,7 @@ import base64
 import os
 from pathlib import Path
 from typing import Optional, Tuple
+from urllib.parse import urlparse
 
 from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
@@ -45,6 +46,34 @@ def create_app() -> Flask:
         app.logger.warning("无法初始化 transfer.info 默认配置：%s", exc)
 
     remote_client: Optional[RemoteClient] = None
+
+    def parse_server_host(raw: str) -> Tuple[str, Optional[int]]:
+        """Normalise the server host field and capture an embedded HTTP port."""
+
+        value = (raw or "").strip()
+        if not value:
+            raise ValueError("请输入服务器 IP 或域名")
+
+        # urlparse requires a scheme to reliably extract hostname/port. If the
+        # user omits it (which is common when pasting values such as
+        # "192.168.1.10:5000"), prefix "//" so it is treated as a netloc.
+        candidate = value if "://" in value else f"//{value}"
+        try:
+            parsed = urlparse(candidate)
+        except ValueError as exc:  # pragma: no cover - defensive branch
+            raise ValueError("服务器地址格式不正确") from exc
+
+        host = (parsed.hostname or "").strip()
+        if not host:
+            raise ValueError("服务器地址格式不正确")
+
+        http_port: Optional[int]
+        try:
+            http_port = parsed.port
+        except ValueError as exc:
+            raise ValueError("服务器地址中的端口无效") from exc
+
+        return host, http_port
 
     def get_remote_client() -> RemoteClient:
         nonlocal remote_client
@@ -149,9 +178,10 @@ def create_app() -> Flask:
     @app.post("/api/server")
     def update_server():
         payload = request.get_json(silent=True) or {}
-        server_host = str(payload.get("serverHost", "")).strip()
-        if not server_host:
-            return jsonify({"error": "请输入服务器 IP 或域名"}), 400
+        try:
+            server_host, http_port_from_host = parse_server_host(payload.get("serverHost", ""))
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
 
         try:
             server_tcp_port = int(payload.get("serverTcpPort"))
@@ -161,18 +191,29 @@ def create_app() -> Flask:
         if not 1 <= server_tcp_port <= 65535:
             return jsonify({"error": "TCP 端口号应在 1-65535 之间"}), 400
 
-        http_port_provided = "serverHttpPort" in payload
         http_port_raw = payload.get("serverHttpPort")
-        http_port: Optional[int]
-        if http_port_raw in (None, "", "default"):
-            http_port = None
+        http_port_override: Optional[int] = None
+        http_port_override_provided = False
+
+        if isinstance(http_port_raw, str):
+            http_port_raw = http_port_raw.strip()
+
+        if http_port_raw in (None, ""):
+            # 留空表示使用默认端口。当 host 中包含端口时，优先使用该端口。
+            if http_port_from_host is None:
+                http_port_override_provided = True
+                http_port_override = None
+        elif isinstance(http_port_raw, str) and http_port_raw.lower() == "default":
+            http_port_override_provided = True
+            http_port_override = None
         else:
             try:
-                http_port = int(http_port_raw)
+                http_port_override = int(http_port_raw)
             except (TypeError, ValueError):
                 return jsonify({"error": "HTTP 接口端口格式不正确"}), 400
-            if not 1 <= http_port <= 65535:
+            if not 1 <= http_port_override <= 65535:
                 return jsonify({"error": "HTTP 接口端口号应在 1-65535 之间"}), 400
+            http_port_override_provided = True
 
         existing_name = None
         existing_file = None
@@ -188,8 +229,10 @@ def create_app() -> Flask:
                 existing_file = None
                 existing_http_port = None
 
-        if http_port_provided:
-            http_port_to_save = http_port
+        if http_port_override_provided:
+            http_port_to_save = http_port_override
+        elif http_port_from_host is not None:
+            http_port_to_save = http_port_from_host
         else:
             http_port_to_save = existing_http_port
 
