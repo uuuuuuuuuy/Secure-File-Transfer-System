@@ -82,34 +82,90 @@ function updateSummary(data) {
   setInputValue("server-http-port", httpPortValue === null || typeof httpPortValue === "undefined" ? "" : httpPortValue);
 }
 
+async function parseResponse(res) {
+  const text = await res.text();
+  if (!text) {
+    return { data: undefined, rawText: "" };
+  }
+
+  try {
+    return { data: JSON.parse(text), rawText: "" };
+  } catch (error) {
+    return { data: undefined, rawText: text };
+  }
+}
+
+function extractErrorMessage(data, rawText, res) {
+  if (data && typeof data === "object") {
+    if (typeof data.error === "string" && data.error.trim()) {
+      return data.error.trim();
+    }
+    if (typeof data.message === "string" && data.message.trim()) {
+      return data.message.trim();
+    }
+    if (typeof data.detail === "string" && data.detail.trim()) {
+      return data.detail.trim();
+    }
+    if (Array.isArray(data.errors) && data.errors.length) {
+      const first = data.errors[0];
+      if (typeof first === "string" && first.trim()) {
+        return first.trim();
+      }
+    }
+  }
+
+  if (typeof rawText === "string" && rawText.trim()) {
+    const snippet = rawText.trim();
+    return snippet.length > 200 ? `${snippet.slice(0, 200)}…` : snippet;
+  }
+
+  return `请求失败（HTTP ${res.status}）`;
+}
+
 async function postJson(url, payload) {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  const data = await res.json().catch(() => ({}));
+  let res;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  } catch (error) {
+    const message = error && error.message ? error.message : String(error);
+    throw new Error(`无法连接到客户端服务：${message}`);
+  }
+
+  const { data, rawText } = await parseResponse(res);
   if (!res.ok) {
-    throw new Error(data.error || "请求失败");
+    throw new Error(extractErrorMessage(data, rawText, res));
   }
-  updateSummary(data);
-  if (data.message) {
-    pushLog(data.message);
+  const payload = data && typeof data === "object" ? data : {};
+  updateSummary(payload);
+  if (payload.message) {
+    pushLog(payload.message);
   }
-  return data;
+  return payload;
 }
 
 async function postForm(url, formData) {
-  const res = await fetch(url, { method: "POST", body: formData });
-  const data = await res.json().catch(() => ({}));
+  let res;
+  try {
+    res = await fetch(url, { method: "POST", body: formData });
+  } catch (error) {
+    const message = error && error.message ? error.message : String(error);
+    throw new Error(`无法连接到客户端服务：${message}`);
+  }
+
+  const { data, rawText } = await parseResponse(res);
   if (!res.ok) {
-    throw new Error(data.error || "请求失败");
+    throw new Error(extractErrorMessage(data, rawText, res));
   }
-  updateSummary(data);
-  if (data.message) {
-    pushLog(data.message);
+  const payload = data && typeof data === "object" ? data : {};
+  updateSummary(payload);
+  if (payload.message) {
+    pushLog(payload.message);
   }
-  return data;
+  return payload;
 }
 
 function bindForms() {

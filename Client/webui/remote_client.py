@@ -24,15 +24,38 @@ class RemoteClient:
             raise RemoteClientError(
                 f"无法连接到服务器 {self.base_url}：{exc}"
             ) from exc
+
+        raw_text = response.text or ""
+        payload: Dict[str, Any]
         try:
-            payload = response.json()
+            payload = response.json() if raw_text else {}
         except ValueError:
-            payload = {"error": response.text or "服务器返回了无效的响应"}
+            payload = {}
+
         if response.status_code >= 400:
-            message = payload.get("error") if isinstance(payload, dict) else None
-            raise RemoteClientError(message or f"请求失败，状态码 {response.status_code}")
-        if not isinstance(payload, dict):
+            detail: Optional[str] = None
+            if isinstance(payload, dict):
+                for key in ("error", "message", "detail"):
+                    value = payload.get(key)
+                    if isinstance(value, str) and value.strip():
+                        detail = value.strip()
+                        break
+            elif isinstance(payload, list) and payload:
+                maybe_message = payload[0]
+                if isinstance(maybe_message, str):
+                    detail = maybe_message.strip()
+
+            if not detail and raw_text:
+                snippet = raw_text.strip()
+                detail = snippet if len(snippet) <= 200 else f"{snippet[:200]}…"
+
+            raise RemoteClientError(
+                detail or f"请求失败（HTTP {response.status_code}）"
+            )
+
+        if payload and not isinstance(payload, dict):
             raise RemoteClientError("服务器返回了意料之外的格式")
+
         return response.status_code, payload
 
     def register(self, client_name: str) -> Dict[str, Any]:
