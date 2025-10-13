@@ -212,10 +212,9 @@ def create_app() -> Flask:
             http_port_raw = http_port_raw.strip()
 
         if http_port_raw in (None, ""):
-            # 留空表示使用默认端口。当 host 中包含端口时，优先使用该端口。
-            if http_port_from_host is None:
-                http_port_override_provided = True
-                http_port_override = None
+            # 留空表示沿用现有配置或使用默认端口。当 host 中包含端口时，
+            # 仍然优先使用 host 中的端口；否则保持之前保存的值。
+            http_port_override_provided = False
         elif isinstance(http_port_raw, str) and http_port_raw.lower() == "default":
             http_port_override_provided = True
             http_port_override = None
