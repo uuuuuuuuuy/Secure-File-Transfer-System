@@ -45,11 +45,18 @@ class StateStore:
         self.save(data)
         return data
 
-    def status(self) -> Dict[str, Optional[str]]:
+    def record_server_check(self, status: Dict[str, Any]) -> Dict[str, Any]:
+        data = self.load()
+        data["server_check"] = status
+        self.save(data)
+        return data
+
+    def status(self) -> Dict[str, Any]:
         data = self.load()
         return {
             "has_aes_key": data.get("has_aes_key", False),
             "last_key_exchange": data.get("last_key_exchange"),
             "last_send": data.get("last_send"),
             "last_send_file": data.get("last_send_file"),
+            "server_check": data.get("server_check"),
         }

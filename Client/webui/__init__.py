@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Tuple
 from urllib.parse import urlparse
@@ -14,7 +15,9 @@ from werkzeug.utils import secure_filename
 
 from .config import (
     DEFAULT_BIND_PORT,
+    DEFAULT_REMOTE_BASE_URL,
     DEFAULT_REMOTE_HTTP_PORT,
+    DEFAULT_SERVER_HOST,
     TransferFile,
     get_base_dir,
     resolve_remote_base,
@@ -99,10 +102,18 @@ def create_app() -> Flask:
 
     def serialize_state():
         transfer_info = None
+        base_url = None
         try:
             transfer_info = transfer_file.read()
         except Exception:
             transfer_info = None
+
+        if transfer_info:
+            base_url = resolve_remote_base(transfer_info)
+        elif DEFAULT_REMOTE_BASE_URL:
+            base_url = DEFAULT_REMOTE_BASE_URL.rstrip("/")
+        else:
+            base_url = f"http://{DEFAULT_SERVER_HOST}:{DEFAULT_REMOTE_HTTP_PORT}"
 
         me_info = key_manager.read_me_info()
         state = state_store.status()
@@ -116,6 +127,7 @@ def create_app() -> Flask:
             else DEFAULT_REMOTE_HTTP_PORT,
             "serverHttpPortConfigured": transfer_info.server_http_port if transfer_info else None,
             "serverHttpEndpoint": transfer_info.server_http_endpoint() if transfer_info else None,
+            "serverBaseUrl": base_url,
             "clientName": transfer_info.client_name if transfer_info else me_info.client_name,
             "clientId": me_info.client_id,
             "filePath": transfer_info.file_path if transfer_info else None,
@@ -124,6 +136,7 @@ def create_app() -> Flask:
             "lastKeyExchange": state.get("last_key_exchange"),
             "lastSendAt": state.get("last_send"),
             "lastSendFile": state.get("last_send_file"),
+            "serverConnectionStatus": state.get("server_check"),
             "publicKeyFingerprint": key_manager.public_key_fingerprint(),
             "publicKeyCreatedAt": key_manager.public_key_created_at(),
         }
@@ -250,12 +263,61 @@ def create_app() -> Flask:
         nonlocal remote_client
         remote_client = None
 
+        connection_status = {
+            "checkedAt": datetime.now(tz=timezone.utc).isoformat(),
+        }
+
         response = serialize_state()
-        response.update(
-            {
-                "message": "服务器配置已更新",
-            }
-        )
+
+        try:
+            client = get_remote_client()
+            server_info = client.get_server_info()
+        except RemoteClientError as exc:
+            connection_status.update({
+                "ok": False,
+                "error": str(exc),
+                "baseUrl": response.get("serverBaseUrl"),
+            })
+            response.update(
+                {
+                    "message": f"服务器配置已保存，但连接测试失败：{exc}",
+                    "connectionStatus": connection_status,
+                }
+            )
+        except Exception as exc:  # pylint: disable=broad-except
+            connection_status.update(
+                {
+                    "ok": False,
+                    "error": f"连接测试异常：{exc}",
+                    "baseUrl": response.get("serverBaseUrl"),
+                }
+            )
+            response.update(
+                {
+                    "message": f"服务器配置已保存，但连接测试出现异常：{exc}",
+                    "connectionStatus": connection_status,
+                }
+            )
+        else:
+            connection_status.update(
+                {
+                    "ok": True,
+                    "message": server_info.get("httpUrl") or client.base_url,
+                    "baseUrl": client.base_url,
+                    "serverInfo": server_info,
+                }
+            )
+            response.update(
+                {
+                    "message": "服务器配置已更新并通过连接测试",
+                    "connectionStatus": connection_status,
+                }
+            )
+
+        state_store.record_server_check(connection_status)
+
+        response["serverConnectionStatus"] = connection_status
+
         return jsonify(response)
 
     @app.post("/api/login")

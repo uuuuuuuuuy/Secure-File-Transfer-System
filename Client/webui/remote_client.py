@@ -79,3 +79,7 @@ class RemoteClient:
         _, data = self._request("POST", "/api/files", json=payload)
         return data
 
+    def get_server_info(self) -> Dict[str, Any]:
+        _, data = self._request("GET", "/api/server-info")
+        return data
+

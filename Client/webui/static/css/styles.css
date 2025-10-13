@@ -66,6 +66,14 @@ body {
   overflow-wrap: anywhere;
 }
 
+.summary-list dd.status-ok {
+  color: #166534;
+}
+
+.summary-list dd.status-fail {
+  color: #b91c1c;
+}
+
 .mono {
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
 }
@@ -175,6 +183,14 @@ body {
 
   .summary-list div {
     background: #111827;
+  }
+
+  .summary-list dd.status-ok {
+    color: #86efac;
+  }
+
+  .summary-list dd.status-fail {
+    color: #fca5a5;
   }
 
   .form input {

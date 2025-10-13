@@ -67,6 +67,40 @@ function updateSummary(data) {
   } else {
     setText("summary-server-http", null);
   }
+  setText("summary-server-base", data.serverBaseUrl);
+
+  const statusEl = $("summary-server-check");
+  if (statusEl) {
+    statusEl.classList.remove("status-ok", "status-fail");
+    const status = data.serverConnectionStatus;
+    if (status && typeof status === "object") {
+      const parts = [];
+      if (status.ok === true) {
+        parts.push("连接正常");
+        statusEl.classList.add("status-ok");
+      } else if (status.ok === false) {
+        parts.push("连接失败");
+        statusEl.classList.add("status-fail");
+      } else {
+        parts.push("已检测");
+      }
+      const detail = status.message || status.error;
+      if (detail) {
+        parts.push(detail);
+      }
+      if (status.checkedAt) {
+        try {
+          parts.push(new Date(status.checkedAt).toLocaleString());
+        } catch (error) {
+          parts.push(status.checkedAt);
+        }
+      }
+      statusEl.textContent = parts.join(" · ") || "-";
+    } else {
+      statusEl.textContent = "未检测";
+    }
+  }
+
   setText("summary-name", data.clientName);
   setText("summary-id", data.clientId);
   setText("summary-file", data.filePath);
@@ -79,7 +113,10 @@ function updateSummary(data) {
   setInputValue("server-host", data.serverHost || "");
   setInputValue("server-tcp-port", data.serverTcpPort || "");
   const httpPortValue = data.serverHttpPortConfigured;
-  setInputValue("server-http-port", httpPortValue === null || typeof httpPortValue === "undefined" ? "" : httpPortValue);
+  setInputValue(
+    "server-http-port",
+    httpPortValue === null || typeof httpPortValue === "undefined" ? "" : httpPortValue,
+  );
 }
 
 async function parseResponse(res) {
@@ -182,7 +219,9 @@ function bindForms() {
           serverHttpPort: formData.get("serverHttpPort"),
         };
         const data = await postJson("/api/server", payload);
-        setMessage("server-message", data.message || "服务器配置已更新");
+        const connectionStatus = data.connectionStatus || data.serverConnectionStatus;
+        const isError = Boolean(connectionStatus && connectionStatus.ok === false);
+        setMessage("server-message", data.message || "服务器配置已更新", isError);
       } catch (error) {
         setMessage("server-message", error.message, true);
       }
