@@ -3,123 +3,117 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>服务器监控面板</title>
+    <title>服务器 Web 面板</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
   </head>
   <body>
     <header class="page-header">
-      <h1>安全文件传输 · 服务端监控面板</h1>
-      <p>实时查看客户端注册信息与传输的文件记录，便于统一管理。</p>
+      <h1>安全文件传输 · 服务器面板</h1>
+      <p>通过最基本的 HTTP 表单完成注册、密钥交换、文件上传与 CRC 回执。</p>
     </header>
 
     <main class="layout">
-      <div id="feedback" class="feedback" role="status" aria-live="polite"></div>
-      <section class="panel panel-overview">
-        <div class="panel-header">
-          <h2>运行概览</h2>
-          <button id="refresh-all" type="button" class="refresh">立即刷新</button>
-        </div>
-        <dl class="overview">
+      <section class="panel">
+        <h2>当前会话</h2>
+        <dl class="session-summary">
           <div>
-            <dt>注册客户端</dt>
-            <dd id="stat-clients">0</dd>
+            <dt>客户端名称</dt>
+            <dd id="summary-client-name">-</dd>
           </div>
           <div>
-            <dt>文件传输次数</dt>
-            <dd id="stat-transfers">0</dd>
+            <dt>客户端 ID</dt>
+            <dd id="summary-client-id">-</dd>
           </div>
           <div>
-            <dt>已确认校验</dt>
-            <dd id="stat-verified">0</dd>
+            <dt>AES 状态</dt>
+            <dd id="summary-aes-status">未协商</dd>
+          </div>
+          <div>
+            <dt>最近 CRC</dt>
+            <dd id="summary-crc-status">暂无上传</dd>
           </div>
         </dl>
-        <p class="muted">数据每 5 秒自动刷新一次，也可以手动点击上方按钮立即更新。</p>
-        <div class="server-meta" aria-live="polite">
-          <h3>服务器连接信息</h3>
-          <dl class="server-meta-grid">
-            <div>
-              <dt>服务器 IP</dt>
-              <dd><code id="server-tcp-host">-</code></dd>
-            </div>
-            <div>
-              <dt>局域网可访问 IP</dt>
-              <dd id="server-lan-hosts" class="ip-list">-</dd>
-            </div>
-            <div>
-              <dt>TCP 端口</dt>
-              <dd><code id="server-tcp-port">-</code></dd>
-            </div>
-            <div>
-              <dt>监听地址</dt>
-              <dd><code id="server-tcp-bind">-</code></dd>
-            </div>
-            <div>
-              <dt>控制台地址</dt>
-              <dd><code id="server-http-url">-</code></dd>
-            </div>
-            <div>
-              <dt>HTTP 端口</dt>
-              <dd><code id="server-http-port">-</code></dd>
-            </div>
-          </dl>
-          <p class="muted">在客户端配置中填入上述 IP 与端口即可与服务器建立连接。</p>
-        </div>
+        <p id="global-message" class="message" role="status"></p>
       </section>
 
-      <section class="panel panel-clients">
-        <h2>注册客户端</h2>
-        <p class="muted">点击某一行可查看该客户端的详细传输记录。</p>
-        <div class="table-wrapper">
-          <table class="data-table" id="clients-table">
-            <thead>
-              <tr>
-                <th>客户端 ID</th>
-                <th>用户名</th>
-                <th>最近上线</th>
-                <th>最近 IP</th>
-                <th>文件数量</th>
-                <th>密钥状态</th>
-              </tr>
-            </thead>
-            <tbody id="clients-tbody">
-              <tr><td colspan="6" class="empty">暂无客户端</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section class="panel panel-transfers">
-        <div class="panel-header">
-          <h2>文件传输记录</h2>
-          <div class="panel-actions">
-            <p id="transfer-filter" class="muted">当前显示：全部客户端</p>
-            <button id="open-storage" type="button" class="action-link">打开文件目录</button>
+      <section class="panel">
+        <h2>1. 注册或登录</h2>
+        <form id="register-form" class="form">
+          <label for="register-name">注册新客户端</label>
+          <div class="form-row">
+            <input id="register-name" name="clientName" type="text" required placeholder="例如：Alice">
+            <button type="submit">注册</button>
           </div>
+          <p class="message" id="register-message"></p>
+        </form>
+
+        <form id="login-form" class="form">
+          <label for="login-name">使用已有客户端登录</label>
+          <div class="form-row">
+            <input id="login-name" name="clientName" type="text" required placeholder="客户端名称">
+            <input id="login-id" name="clientId" type="text" required placeholder="客户端 ID">
+            <button type="submit">登录</button>
+          </div>
+          <p class="message" id="login-message"></p>
+        </form>
+      </section>
+
+      <section class="panel">
+        <h2>2. 上传公钥</h2>
+        <form id="key-form" class="form">
+          <label for="public-key">公钥（Base64，SPKI）</label>
+          <textarea id="public-key" rows="4" placeholder="粘贴或由浏览器生成的公钥"></textarea>
+          <label for="private-key">私钥（Base64，PKCS#8，仅保留在本地）</label>
+          <textarea id="private-key" rows="4" placeholder="如需使用已有密钥，请在此粘贴私钥"></textarea>
+          <div class="form-row">
+            <button id="generate-keypair" type="button">生成密钥对</button>
+            <button id="submit-public-key" type="submit">上传公钥并协商 AES</button>
+          </div>
+          <label for="aes-key">最新 AES 密钥（Base64）</label>
+          <input id="aes-key" type="text" readonly placeholder="协商完成后显示">
+          <p class="message" id="key-message"></p>
+        </form>
+      </section>
+
+      <section class="panel">
+        <h2>3. 上传文件</h2>
+        <form id="upload-form" class="form">
+          <label for="file-input">选择经 AES 加密的文件</label>
+          <input id="file-input" type="file" required>
+          <button type="submit">上传</button>
+          <p class="message" id="upload-message"></p>
+        </form>
+      </section>
+
+      <section class="panel">
+        <h2>4. CRC 回执</h2>
+        <div class="button-group">
+          <button id="ack-accept" type="button">CRC 正确</button>
+          <button id="ack-reject" type="button">CRC 错误</button>
         </div>
-        <div class="table-wrapper">
-          <table class="data-table" id="transfers-table">
-            <thead>
-              <tr>
-                <th>时间</th>
-                <th>客户端</th>
-                <th>文件名</th>
-                <th>大小</th>
-                <th>保存路径</th>
-                <th>来源 IP</th>
-                <th>CRC 值</th>
-                <th>CRC 状态</th>
-              </tr>
-            </thead>
-            <tbody id="transfers-tbody">
-              <tr><td colspan="8" class="empty">暂无文件传输记录</td></tr>
-            </tbody>
-          </table>
-        </div>
+        <p class="message" id="ack-message"></p>
+      </section>
+
+      <section class="panel">
+        <h2>上传记录</h2>
+        <button id="refresh-files" type="button" class="refresh">刷新</button>
+        <table class="file-table">
+          <thead>
+            <tr>
+              <th>文件名</th>
+              <th>保存路径</th>
+              <th>CRC 校验</th>
+            </tr>
+          </thead>
+          <tbody id="file-tbody">
+            <tr><td colspan="3" class="empty">暂无记录</td></tr>
+          </tbody>
+        </table>
       </section>
     </main>
 
     <footer class="page-footer">
-      <small>该面板仅用于监控服务器接收的文件和客户端状态，所有上传及密钥协商仍通过原有协议执行。</small>
+      <small>以上流程均直接复用服务器现有逻辑，未修改原有协议。</small>
     </footer>
 
     <script src="{{ url_for('static', filename='js/app.js') }}" defer></script>

@@ -1,24 +1,15 @@
-"""Client-side web UI for managing registration, key exchange and file sending."""
+"""Client-side web UI for managing registration and key exchange."""
 from __future__ import annotations
 
-import base64
 import os
-import socket
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, Tuple
-from urllib.parse import urlparse
+from typing import Optional
 
-from cryptography.hazmat.primitives import padding
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from flask import Flask, jsonify, render_template, request, send_file
 from werkzeug.utils import secure_filename
 
 from .config import (
     DEFAULT_BIND_PORT,
-    DEFAULT_REMOTE_BASE_URL,
-    DEFAULT_REMOTE_HTTP_PORT,
-    DEFAULT_SERVER_HOST,
     TransferFile,
     get_base_dir,
     resolve_remote_base,
@@ -42,42 +33,7 @@ def create_app() -> Flask:
     app.config["SECRET_KEY"] = os.environ.get("CLIENT_WEBUI_SECRET_KEY", "client-webui-dev")
     app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024  # 50 MB for local uploads
 
-    try:
-        transfer_file.ensure_defaults()
-    except Exception as exc:  # pylint: disable=broad-except
-        # 读取或写入默认配置失败时记录日志，但不中断应用启动。
-        # 随后的请求仍会在访问 transfer.info 时返回具体的错误信息。
-        app.logger.warning("无法初始化 transfer.info 默认配置：%s", exc)
-
     remote_client: Optional[RemoteClient] = None
-
-    def parse_server_host(raw: str) -> Tuple[str, Optional[int]]:
-        """Normalise the server host field and capture an embedded HTTP port."""
-
-        value = (raw or "").strip()
-        if not value:
-            raise ValueError("请输入服务器 IP 或域名")
-
-        # urlparse requires a scheme to reliably extract hostname/port. If the
-        # user omits it (which is common when pasting values such as
-        # "192.168.1.10:5000"), prefix "//" so it is treated as a netloc.
-        candidate = value if "://" in value else f"//{value}"
-        try:
-            parsed = urlparse(candidate)
-        except ValueError as exc:  # pragma: no cover - defensive branch
-            raise ValueError("服务器地址格式不正确") from exc
-
-        host = (parsed.hostname or "").strip()
-        if not host:
-            raise ValueError("服务器地址格式不正确")
-
-        http_port: Optional[int]
-        try:
-            http_port = parsed.port
-        except ValueError as exc:
-            raise ValueError("服务器地址中的端口无效") from exc
-
-        return host, http_port
 
     def get_remote_client() -> RemoteClient:
         nonlocal remote_client
@@ -87,66 +43,24 @@ def create_app() -> Flask:
             remote_client = RemoteClient(base_url)
         return remote_client
 
-    def encrypt_file_for_upload(path: Path, aes_key_b64: str) -> Tuple[str, int]:
-        raw = path.read_bytes()
-        key = base64.b64decode(aes_key_b64)
-        if len(key) not in {16, 24, 32}:
-            raise ValueError("服务器返回的 AES 密钥长度异常")
-        iv = os.urandom(16)
-        cipher = Cipher(algorithms.AES(key), modes.CBC(iv))
-        encryptor = cipher.encryptor()
-        padder = padding.PKCS7(algorithms.AES.block_size).padder()
-        padded = padder.update(raw) + padder.finalize()
-        ciphertext = encryptor.update(padded) + encryptor.finalize()
-        payload = base64.b64encode(iv + ciphertext).decode("ascii")
-        return payload, len(raw)
-
-    def check_tcp_connectivity(host: str, port: int, timeout: float = 3.0) -> Tuple[bool, Optional[str]]:
-        """Attempt to open a TCP connection to the configured server."""
-
-        try:
-            with socket.create_connection((host, port), timeout=timeout):
-                return True, None
-        except OSError as exc:
-            return False, str(exc)
-
     def serialize_state():
         transfer_info = None
-        base_url = None
         try:
             transfer_info = transfer_file.read()
         except Exception:
             transfer_info = None
-
-        if transfer_info:
-            base_url = resolve_remote_base(transfer_info)
-        elif DEFAULT_REMOTE_BASE_URL:
-            base_url = DEFAULT_REMOTE_BASE_URL.rstrip("/")
-        else:
-            base_url = f"http://{DEFAULT_SERVER_HOST}:{DEFAULT_REMOTE_HTTP_PORT}"
 
         me_info = key_manager.read_me_info()
         state = state_store.status()
 
         return {
             "serverEndpoint": transfer_info.server_tcp_endpoint if transfer_info else None,
-            "serverHost": transfer_info.server_host if transfer_info else None,
-            "serverTcpPort": transfer_info.server_tcp_port if transfer_info else None,
-            "serverHttpPort": transfer_info.server_http_port_or_default()
-            if transfer_info
-            else DEFAULT_REMOTE_HTTP_PORT,
-            "serverHttpPortConfigured": transfer_info.server_http_port if transfer_info else None,
-            "serverHttpEndpoint": transfer_info.server_http_endpoint() if transfer_info else None,
-            "serverBaseUrl": base_url,
             "clientName": transfer_info.client_name if transfer_info else me_info.client_name,
             "clientId": me_info.client_id,
             "filePath": transfer_info.file_path if transfer_info else None,
             "registered": bool(me_info.client_id),
             "hasAesKey": bool(state.get("has_aes_key")),
             "lastKeyExchange": state.get("last_key_exchange"),
-            "lastSendAt": state.get("last_send"),
-            "lastSendFile": state.get("last_send_file"),
-            "serverConnectionStatus": state.get("server_check"),
             "publicKeyFingerprint": key_manager.public_key_fingerprint(),
             "publicKeyCreatedAt": key_manager.public_key_created_at(),
         }
@@ -197,181 +111,6 @@ def create_app() -> Flask:
             }
         )
         return jsonify(response), 201
-
-    @app.post("/api/server")
-    def update_server():
-        payload = request.get_json(silent=True) or {}
-        try:
-            server_host, http_port_from_host = parse_server_host(payload.get("serverHost", ""))
-        except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
-
-        try:
-            server_tcp_port = int(payload.get("serverTcpPort"))
-        except (TypeError, ValueError):
-            return jsonify({"error": "TCP 端口格式不正确"}), 400
-
-        if not 1 <= server_tcp_port <= 65535:
-            return jsonify({"error": "TCP 端口号应在 1-65535 之间"}), 400
-
-        http_port_raw = payload.get("serverHttpPort")
-        http_port_override: Optional[int] = None
-        http_port_override_provided = False
-        http_port_cleared = False
-
-        if isinstance(http_port_raw, str):
-            http_port_raw = http_port_raw.strip()
-
-        if http_port_raw in (None, ""):
-            http_port_cleared = True
-        elif isinstance(http_port_raw, str) and http_port_raw.lower() == "default":
-            http_port_override_provided = True
-            http_port_override = None
-        else:
-            try:
-                http_port_override = int(http_port_raw)
-            except (TypeError, ValueError):
-                return jsonify({"error": "HTTP 接口端口格式不正确"}), 400
-            if not 1 <= http_port_override <= 65535:
-                return jsonify({"error": "HTTP 接口端口号应在 1-65535 之间"}), 400
-            http_port_override_provided = True
-
-        existing_name = None
-        existing_file = None
-        existing_http_port = None
-        existing_host = None
-        if transfer_file.exists():
-            try:
-                info = transfer_file.read()
-                existing_name = info.client_name
-                existing_file = info.file_path
-                existing_http_port = info.server_http_port
-                existing_host = info.server_host
-            except Exception:
-                existing_name = None
-                existing_file = None
-                existing_http_port = None
-                existing_host = None
-
-        host_changed = bool(existing_host) and existing_host != server_host
-
-        if http_port_override_provided:
-            http_port_to_save = http_port_override
-            http_port_source = "override" if http_port_override is not None else "default"
-        elif http_port_from_host is not None:
-            http_port_to_save = http_port_from_host
-            http_port_source = "from-host"
-        elif http_port_cleared or host_changed:
-            http_port_to_save = None
-            http_port_source = "default"
-        else:
-            http_port_to_save = existing_http_port
-            http_port_source = "existing"
-
-        try:
-            transfer_file.write(
-                server_host,
-                server_tcp_port,
-                client_name=existing_name,
-                file_path=existing_file,
-                server_http_port=http_port_to_save,
-            )
-        except Exception as exc:  # pylint: disable=broad-except
-            return jsonify({"error": f"写入 transfer.info 失败: {exc}"}), 500
-
-        nonlocal remote_client
-        remote_client = None
-
-        response = serialize_state()
-
-        connection_status = {
-            "checkedAt": datetime.now(tz=timezone.utc).isoformat(),
-            "configuredHttpPort": response.get("serverHttpPortConfigured"),
-            "effectiveHttpPort": response.get("serverHttpPort"),
-            "serverHost": response.get("serverHost"),
-            "httpPortSource": http_port_source,
-            "tcpEndpoint": response.get("serverEndpoint"),
-        }
-
-        try:
-            client = get_remote_client()
-            server_info = client.get_server_info()
-        except RemoteClientError as exc:
-            connection_status.update({
-                "ok": False,
-                "error": str(exc),
-                "baseUrl": response.get("serverBaseUrl"),
-            })
-        except Exception as exc:  # pylint: disable=broad-except
-            connection_status.update(
-                {
-                    "ok": False,
-                    "error": f"连接测试异常：{exc}",
-                    "baseUrl": response.get("serverBaseUrl"),
-                }
-            )
-        else:
-            connection_status.update(
-                {
-                    "ok": True,
-                    "message": server_info.get("httpUrl") or client.base_url,
-                    "baseUrl": client.base_url,
-                    "serverInfo": server_info,
-                }
-            )
-
-        tcp_ok: Optional[bool] = None
-        tcp_error: Optional[str] = None
-        if isinstance(server_tcp_port, int) and response.get("serverHost"):
-            tcp_ok, tcp_error = check_tcp_connectivity(response["serverHost"], server_tcp_port)
-            connection_status.update(
-                {
-                    "tcpOk": tcp_ok,
-                    "tcpError": tcp_error,
-                    "tcpPort": server_tcp_port,
-                }
-            )
-
-        status_fragments = []
-        if connection_status.get("ok") is True:
-            status_fragments.append("HTTP 接口连通")
-        elif connection_status.get("ok") is False:
-            err = connection_status.get("error") or connection_status.get("message")
-            status_fragments.append(
-                "HTTP 接口异常" + (f"：{err}" if err else "")
-            )
-
-        if tcp_ok is True:
-            status_fragments.append("TCP 端口连通")
-        elif tcp_ok is False:
-            status_fragments.append(
-                "TCP 端口异常"
-                + (f"：{tcp_error}" if tcp_error else "")
-            )
-
-        status_text = "，".join(status_fragments)
-
-        if connection_status.get("ok") is True and tcp_ok in (True, None):
-            response_message = (
-                f"服务器配置已更新：{status_text}" if status_text else "服务器配置已更新"
-            )
-        else:
-            response_message = (
-                f"服务器配置已保存：{status_text}" if status_text else "服务器配置已保存"
-            )
-
-        response.update(
-            {
-                "message": response_message,
-                "connectionStatus": connection_status,
-            }
-        )
-
-        state_store.record_server_check(connection_status)
-
-        response["serverConnectionStatus"] = connection_status
-
-        return jsonify(response)
 
     @app.post("/api/login")
     def login():
@@ -488,57 +227,7 @@ def create_app() -> Flask:
         response = serialize_state()
         response.update(
             {
-                "message": "文件已保存至本地临时目录，并更新 transfer.info，您可直接在此界面触发发送。",
-            }
-        )
-        return jsonify(response)
-
-    @app.post("/api/send")
-    def send_file():
-        if not transfer_file.exists():
-            return jsonify({"error": "找不到 transfer.info，请先配置客户端。"}), 400
-
-        try:
-            info = transfer_file.read()
-        except Exception as exc:  # pylint: disable=broad-except
-            return jsonify({"error": f"读取 transfer.info 失败: {exc}"}), 400
-
-        if not info.file_path:
-            return jsonify({"error": "transfer.info 中缺少待发送文件路径，请先在上方“文件准备”中选择文件。"}), 400
-
-        file_path = Path(info.file_path).expanduser()
-        if not file_path.is_file():
-            return jsonify({"error": "待发送文件不存在或已被移动，请重新选择。"}), 400
-
-        aes_key = state_store.get_aes_key()
-        if not aes_key:
-            return jsonify({"error": "尚未保存 AES 会话密钥，请先完成登录或密钥交换。"}), 400
-
-        try:
-            encrypted_payload, plain_size = encrypt_file_for_upload(file_path, aes_key)
-        except Exception as exc:  # pylint: disable=broad-except
-            return jsonify({"error": f"加密文件失败: {exc}"}), 500
-
-        try:
-            client = get_remote_client()
-        except Exception as exc:  # pylint: disable=broad-except
-            return jsonify({"error": f"读取服务器配置失败: {exc}"}), 500
-
-        try:
-            server_response = client.upload_file(file_path.name, encrypted_payload, plain_size)
-        except RemoteClientError as exc:
-            return jsonify({"error": str(exc)}), 502
-        except Exception as exc:  # pylint: disable=broad-except
-            return jsonify({"error": f"上传失败: {exc}"}), 500
-
-        state_store.record_send(file_path.name)
-
-        response = serialize_state()
-        response.update(
-            {
-                "message": server_response.get("message", "文件已发送"),
-                "serverCrc": server_response.get("crc"),
-                "serverFileSize": server_response.get("fileSize"),
+                "message": "文件已保存至本地临时目录，并更新 transfer.info，您可以运行原有客户端发送文件。",
             }
         )
         return jsonify(response)

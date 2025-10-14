@@ -4,7 +4,6 @@ from __future__ import annotations
 from typing import Any, Dict, Optional, Tuple
 
 import requests
-from requests import exceptions as requests_exceptions
 
 
 class RemoteClientError(Exception):
@@ -18,44 +17,16 @@ class RemoteClient:
 
     def _request(self, method: str, path: str, *, json: Optional[Dict[str, Any]] = None) -> Tuple[int, Dict[str, Any]]:
         url = f"{self.base_url}{path}"
+        response = self.session.request(method, url, json=json, timeout=10)
         try:
-            response = self.session.request(method, url, json=json, timeout=10)
-        except requests_exceptions.RequestException as exc:
-            raise RemoteClientError(
-                f"无法连接到服务器 {self.base_url}：{exc}"
-            ) from exc
-
-        raw_text = response.text or ""
-        payload: Dict[str, Any]
-        try:
-            payload = response.json() if raw_text else {}
+            payload = response.json()
         except ValueError:
-            payload = {}
-
+            payload = {"error": response.text or "服务器返回了无效的响应"}
         if response.status_code >= 400:
-            detail: Optional[str] = None
-            if isinstance(payload, dict):
-                for key in ("error", "message", "detail"):
-                    value = payload.get(key)
-                    if isinstance(value, str) and value.strip():
-                        detail = value.strip()
-                        break
-            elif isinstance(payload, list) and payload:
-                maybe_message = payload[0]
-                if isinstance(maybe_message, str):
-                    detail = maybe_message.strip()
-
-            if not detail and raw_text:
-                snippet = raw_text.strip()
-                detail = snippet if len(snippet) <= 200 else f"{snippet[:200]}…"
-
-            raise RemoteClientError(
-                detail or f"请求失败（HTTP {response.status_code}）"
-            )
-
-        if payload and not isinstance(payload, dict):
+            message = payload.get("error") if isinstance(payload, dict) else None
+            raise RemoteClientError(message or f"请求失败，状态码 {response.status_code}")
+        if not isinstance(payload, dict):
             raise RemoteClientError("服务器返回了意料之外的格式")
-
         return response.status_code, payload
 
     def register(self, client_name: str) -> Dict[str, Any]:
@@ -68,18 +39,5 @@ class RemoteClient:
 
     def key_exchange(self, public_key: str) -> Dict[str, Any]:
         _, data = self._request("POST", "/api/key-exchange", json={"publicKey": public_key})
-        return data
-
-    def upload_file(self, file_name: str, encrypted_file: str, file_size: int) -> Dict[str, Any]:
-        payload = {
-            "fileName": file_name,
-            "encryptedFile": encrypted_file,
-            "fileSize": file_size,
-        }
-        _, data = self._request("POST", "/api/files", json=payload)
-        return data
-
-    def get_server_info(self) -> Dict[str, Any]:
-        _, data = self._request("GET", "/api/server-info")
         return data
 

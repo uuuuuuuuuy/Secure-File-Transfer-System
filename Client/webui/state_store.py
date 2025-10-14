@@ -34,29 +34,9 @@ class StateStore:
         self.save(data)
         return data
 
-    def get_aes_key(self) -> Optional[str]:
-        data = self.load()
-        return data.get("aes_key")
-
-    def record_send(self, file_name: str) -> Dict[str, Any]:
-        data = self.load()
-        data["last_send"] = datetime.now(tz=timezone.utc).isoformat()
-        data["last_send_file"] = file_name
-        self.save(data)
-        return data
-
-    def record_server_check(self, status: Dict[str, Any]) -> Dict[str, Any]:
-        data = self.load()
-        data["server_check"] = status
-        self.save(data)
-        return data
-
-    def status(self) -> Dict[str, Any]:
+    def status(self) -> Dict[str, Optional[str]]:
         data = self.load()
         return {
             "has_aes_key": data.get("has_aes_key", False),
             "last_key_exchange": data.get("last_key_exchange"),
-            "last_send": data.get("last_send"),
-            "last_send_file": data.get("last_send_file"),
-            "server_check": data.get("server_check"),
         }

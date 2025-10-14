@@ -34,4 +34,3 @@ class FilesHandler:
         with open(file_path, "wb") as f:
             f.write(decrypted_file_content)
         print(f"File saved: {sanitized_file_name}")
-        return file_path
