@@ -26,8 +26,9 @@ class TransferInfo:
     def server_tcp_endpoint(self) -> str:
         return f"{self.server_host}:{self.server_tcp_port}"
 
-    @property
     def server_http_port_or_default(self) -> int:
+        """Return the configured HTTP port or fall back to the default."""
+
         return self.server_http_port or DEFAULT_REMOTE_HTTP_PORT
 
     def server_http_endpoint(self) -> str:
