@@ -16,7 +16,7 @@
       <section class="panel">
         <h2>服务器连接</h2>
         <p class="hint-block">配置服务端监听的 TCP 地址与 Web API 端口，所有发送与注册操作都会使用这里的设置。</p>
-        <form id="server-form" class="form">
+        <form id="server-form" class="form" data-async="true">
           <div class="form-control">
             <label for="server-host">服务器地址
               <span class="hint">支持 IP、域名，也可直接粘贴如 <code>http://192.168.1.10:5000</code> 的完整地址。</span>
@@ -100,7 +100,7 @@
 
       <section class="panel">
         <h2>注册与登录</h2>
-        <form id="register-form" class="form">
+        <form id="register-form" class="form" data-async="true">
           <div class="form-control">
             <label for="register-name">客户端名称
               <span class="hint">将显示在服务器数据库中，用于区分不同客户端。</span>
@@ -110,7 +110,7 @@
           <button type="submit">注册新客户端</button>
         </form>
 
-        <form id="login-form" class="form">
+        <form id="login-form" class="form" data-async="true">
           <div class="form-control">
             <label for="login-name">客户端名称
               <span class="hint">需要与 `transfer.info` 与服务器记录保持一致。</span>
@@ -142,7 +142,7 @@
       <section class="panel">
         <h2>文件准备</h2>
         <p class="hint-block">选择待发送文件后，系统会将其复制到 `Client/uploads/` 并更新 `transfer.info` 中的路径。</p>
-        <form id="file-form" class="form" enctype="multipart/form-data">
+        <form id="file-form" class="form" data-async="true" enctype="multipart/form-data">
           <div class="form-control">
             <label for="file-input">本地文件
               <span class="hint">请选择准备加密并发送到服务器的原始文件。</span>

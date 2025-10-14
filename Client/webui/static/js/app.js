@@ -206,6 +206,17 @@ async function postForm(url, formData) {
 }
 
 function bindForms() {
+  const asyncForms = document.querySelectorAll("form[data-async]");
+  asyncForms.forEach((form) => {
+    const prevent = (event) => {
+      if (event) {
+        event.preventDefault();
+      }
+    };
+    form.addEventListener("submit", prevent, true);
+    form.addEventListener("submit", prevent);
+  });
+
   const serverForm = $("server-form");
   if (serverForm) {
     serverForm.addEventListener("submit", async (event) => {
