@@ -1,3 +1,4 @@
+import os
 import socket
 import threading
 
@@ -12,14 +13,20 @@ def run_server():
     files_handler = FilesHandler()
     # Read the port number from the file 'port.info'
     port = files_handler.get_port_number()
+    bind_host = (
+        os.environ.get("SERVER_TCP_HOST")
+        or os.environ.get("SERVER_HOST")
+        or os.environ.get("TCP_HOST")
+        or "0.0.0.0"
+    )
     try:
         # Listen for incoming connections
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
-            server_socket.bind(('localhost', port))
+            server_socket.bind((bind_host, port))
 
             server_socket.listen()
 
-            print(f"Server is listening on port {port}...")
+            print(f"Server is listening on {bind_host}:{port}...")
 
             # Dictionary to keep track of the number of connections per each IP address
             connections_per_ip = {}
