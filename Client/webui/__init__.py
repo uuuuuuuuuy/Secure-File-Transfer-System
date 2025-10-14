@@ -207,15 +207,13 @@ def create_app() -> Flask:
         http_port_raw = payload.get("serverHttpPort")
         http_port_override: Optional[int] = None
         http_port_override_provided = False
+        http_port_cleared = False
 
         if isinstance(http_port_raw, str):
             http_port_raw = http_port_raw.strip()
 
         if http_port_raw in (None, ""):
-            # 留空表示沿用现有配置或使用默认端口。当 host 中包含端口时，
-            # 仍然优先使用 host 中的端口；如果未指定端口且主机发生变化，
-            # 则回落到默认端口；否则保持之前保存的值。
-            http_port_override_provided = False
+            http_port_cleared = True
         elif isinstance(http_port_raw, str) and http_port_raw.lower() == "default":
             http_port_override_provided = True
             http_port_override = None
@@ -249,12 +247,16 @@ def create_app() -> Flask:
 
         if http_port_override_provided:
             http_port_to_save = http_port_override
+            http_port_source = "override" if http_port_override is not None else "default"
         elif http_port_from_host is not None:
             http_port_to_save = http_port_from_host
-        elif host_changed:
+            http_port_source = "from-host"
+        elif http_port_cleared or host_changed:
             http_port_to_save = None
+            http_port_source = "default"
         else:
             http_port_to_save = existing_http_port
+            http_port_source = "existing"
 
         try:
             transfer_file.write(
@@ -270,11 +272,15 @@ def create_app() -> Flask:
         nonlocal remote_client
         remote_client = None
 
+        response = serialize_state()
+
         connection_status = {
             "checkedAt": datetime.now(tz=timezone.utc).isoformat(),
+            "configuredHttpPort": response.get("serverHttpPortConfigured"),
+            "effectiveHttpPort": response.get("serverHttpPort"),
+            "serverHost": response.get("serverHost"),
+            "httpPortSource": http_port_source,
         }
-
-        response = serialize_state()
 
         try:
             client = get_remote_client()

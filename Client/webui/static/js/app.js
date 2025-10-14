@@ -88,6 +88,20 @@ function updateSummary(data) {
       if (detail) {
         parts.push(detail);
       }
+      if (typeof status.effectiveHttpPort !== "undefined" && status.effectiveHttpPort !== null) {
+        const suffix = status.httpPortSource === "default" ? "（默认）" : "";
+        parts.push(`HTTP 端口 ${status.effectiveHttpPort}${suffix}`);
+      }
+      if (typeof status.httpPortSource === "string" && status.httpPortSource && status.httpPortSource !== "default") {
+        const sourceMap = {
+          "override": "（来自表单）",
+          "from-host": "（来自服务器地址）",
+          "existing": "（沿用之前的配置）",
+        };
+        if (sourceMap[status.httpPortSource]) {
+          parts.push(sourceMap[status.httpPortSource]);
+        }
+      }
       if (status.checkedAt) {
         try {
           parts.push(new Date(status.checkedAt).toLocaleString());
