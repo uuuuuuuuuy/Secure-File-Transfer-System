@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import os
+import socket
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Tuple
@@ -99,6 +100,15 @@ def create_app() -> Flask:
         ciphertext = encryptor.update(padded) + encryptor.finalize()
         payload = base64.b64encode(iv + ciphertext).decode("ascii")
         return payload, len(raw)
+
+    def check_tcp_connectivity(host: str, port: int, timeout: float = 3.0) -> Tuple[bool, Optional[str]]:
+        """Attempt to open a TCP connection to the configured server."""
+
+        try:
+            with socket.create_connection((host, port), timeout=timeout):
+                return True, None
+        except OSError as exc:
+            return False, str(exc)
 
     def serialize_state():
         transfer_info = None
@@ -280,6 +290,7 @@ def create_app() -> Flask:
             "effectiveHttpPort": response.get("serverHttpPort"),
             "serverHost": response.get("serverHost"),
             "httpPortSource": http_port_source,
+            "tcpEndpoint": response.get("serverEndpoint"),
         }
 
         try:
@@ -291,24 +302,12 @@ def create_app() -> Flask:
                 "error": str(exc),
                 "baseUrl": response.get("serverBaseUrl"),
             })
-            response.update(
-                {
-                    "message": f"服务器配置已保存，但连接测试失败：{exc}",
-                    "connectionStatus": connection_status,
-                }
-            )
         except Exception as exc:  # pylint: disable=broad-except
             connection_status.update(
                 {
                     "ok": False,
                     "error": f"连接测试异常：{exc}",
                     "baseUrl": response.get("serverBaseUrl"),
-                }
-            )
-            response.update(
-                {
-                    "message": f"服务器配置已保存，但连接测试出现异常：{exc}",
-                    "connectionStatus": connection_status,
                 }
             )
         else:
@@ -320,12 +319,53 @@ def create_app() -> Flask:
                     "serverInfo": server_info,
                 }
             )
-            response.update(
+
+        tcp_ok: Optional[bool] = None
+        tcp_error: Optional[str] = None
+        if isinstance(server_tcp_port, int) and response.get("serverHost"):
+            tcp_ok, tcp_error = check_tcp_connectivity(response["serverHost"], server_tcp_port)
+            connection_status.update(
                 {
-                    "message": "服务器配置已更新并通过连接测试",
-                    "connectionStatus": connection_status,
+                    "tcpOk": tcp_ok,
+                    "tcpError": tcp_error,
+                    "tcpPort": server_tcp_port,
                 }
             )
+
+        status_fragments = []
+        if connection_status.get("ok") is True:
+            status_fragments.append("HTTP 接口连通")
+        elif connection_status.get("ok") is False:
+            err = connection_status.get("error") or connection_status.get("message")
+            status_fragments.append(
+                "HTTP 接口异常" + (f"：{err}" if err else "")
+            )
+
+        if tcp_ok is True:
+            status_fragments.append("TCP 端口连通")
+        elif tcp_ok is False:
+            status_fragments.append(
+                "TCP 端口异常"
+                + (f"：{tcp_error}" if tcp_error else "")
+            )
+
+        status_text = "，".join(status_fragments)
+
+        if connection_status.get("ok") is True and tcp_ok in (True, None):
+            response_message = (
+                f"服务器配置已更新：{status_text}" if status_text else "服务器配置已更新"
+            )
+        else:
+            response_message = (
+                f"服务器配置已保存：{status_text}" if status_text else "服务器配置已保存"
+            )
+
+        response.update(
+            {
+                "message": response_message,
+                "connectionStatus": connection_status,
+            }
+        )
 
         state_store.record_server_check(connection_status)
 

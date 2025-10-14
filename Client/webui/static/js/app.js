@@ -102,6 +102,16 @@ function updateSummary(data) {
           parts.push(sourceMap[status.httpPortSource]);
         }
       }
+      if (typeof status.tcpEndpoint === "string" && status.tcpEndpoint) {
+        parts.push(`TCP ${status.tcpEndpoint}`);
+      }
+      if (status.tcpOk === true) {
+        parts.push("TCP 端口连通");
+      } else if (status.tcpOk === false) {
+        const tcpError = status.tcpError ? String(status.tcpError) : "";
+        const trimmed = tcpError.length > 120 ? `${tcpError.slice(0, 120)}…` : tcpError;
+        parts.push(`TCP 端口异常${trimmed ? `：${trimmed}` : ""}`);
+      }
       if (status.checkedAt) {
         try {
           parts.push(new Date(status.checkedAt).toLocaleString());
