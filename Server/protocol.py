@@ -21,7 +21,7 @@ class Protocol:
         database_handler = DatabaseHandler()
         encryption_handler = EncryptionHandler()
         network_handler = NetworkHandler(
-            database_handler, encryption_handler)
+            database_handler, encryption_handler, client_address)
 
         print(f"[INFO] New connection from {client_address}")
 

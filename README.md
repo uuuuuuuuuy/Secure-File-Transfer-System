@@ -54,9 +54,9 @@ To use the project, follow these steps:
 
 The repository now includes two lightweight browser-based helpers implemented with Flask to streamline the end-to-end workflow.
 
-### Server 控制台（HTTP 接入层）
+### Server 控制台（监控面板）
 
-服务器端提供了一个非常朴素的 Web 界面，每一步都直接映射到原有协议：注册、上传公钥、提交文件以及 CRC 回执。它只是对既有 Python 逻辑的薄封装，方便调试最小可用流程。
+服务器端现在提供了一个只读的监控面板，用于展示注册的客户端、最近的文件传输以及 CRC 确认状态。它不会改变既有协议，只是聚合数据库与文件系统中的信息，帮助管理员在浏览器里快速了解运行状况并打开保存目录。
 
 1. Install the server dependencies:
 
@@ -71,14 +71,14 @@ The repository now includes two lightweight browser-based helpers implemented wi
    flask --app webui.app run --host 0.0.0.0 --port 5000
    ```
 
-3. 打开 `http://localhost:5000`，即可按顺序使用基础表单：
+3. 打开 `http://localhost:5000`，即可：
 
-   - 注册或登录指定客户端；
-   - 在浏览器中生成或粘贴公钥，完成密钥交换（私钥不会离开浏览器）；
-   - 上传经 AES 加密的文件，让服务器按原逻辑解密并计算 CRC；
-   - 通过按钮确认 CRC 状态，并查看该客户端的上传记录。
+   - 查看客户端名称、ID、最近在线时间以及最近一次的连接 IP；
+   - 查看最近的文件传输、存储路径以及 CRC 状态（已确认/待确认）；
+   - 一键跳转到“打开文件目录”页面，浏览服务器上保存的文件结构；
+   - 获取当前服务器的监听端口和可访问的局域网地址，便于客户端配置。
 
-> **说明**：该界面不会新增业务判断，所有请求仍落在现有的数据库、加密与文件处理模块中。
+> **说明**：监控面板只负责展示数据，不会修改数据库或触发协议中的操作。
 
 ### 客户端本地 WebUI（仅监听 127.0.0.1）
 

@@ -36,13 +36,14 @@ INVALID_CKSUM_FINISH_REQUEST = 1106
 
 
 class NetworkHandler:
-    def __init__(self, database_handler, encryption_handler):
+    def __init__(self, database_handler, encryption_handler, client_address=None):
         self.database_handler = database_handler
         self.encryption_handler = encryption_handler
         self.files_handler = FilesHandler()
         self.response_generator = ResponseGenerator()
         self.client_id = str()
         self.client_name = str()
+        self.client_ip = client_address[0] if client_address else None
 
     def parse_request(self, request: bytes):
         decoded_request = request.decode()
@@ -66,6 +67,9 @@ class NetworkHandler:
         client_id = self.database_handler.get_client_id(
             self.client_name)
 
+        if self.client_ip:
+            self.database_handler.update_last_seen(self.client_id, self.client_ip)
+
         self.response_generator.set_client_id(self.client_id.hex())
         return self.response_generator.response(REGISTRATION_ACCEPT, request_parameters)
 
@@ -85,7 +89,7 @@ class NetworkHandler:
         encrypted_aes = self.encryption_handler.get_encrypted_AES_key(
             self.client_name)
 
-        self.database_handler.update_last_seen(self.client_id)
+        self.database_handler.update_last_seen(self.client_id, self.client_ip)
 
         self.response_generator.set_client_id(self.client_id)
         self.response_generator.set_encrypted_aes(encrypted_aes)
@@ -101,7 +105,7 @@ class NetworkHandler:
         encrypted_aes = self.encryption_handler.get_encrypted_AES_key(
             self.client_name)
 
-        self.database_handler.update_last_seen(self.client_id)
+        self.database_handler.update_last_seen(self.client_id, self.client_ip)
 
         self.response_generator.set_encrypted_aes(encrypted_aes)
         return self.response_generator.response(RSA_KEY_ACCEPT, request_parameters)
@@ -119,18 +123,18 @@ class NetworkHandler:
 
         decrypted_file_content = self.encryption_handler.decrypt_file(
             encrypted_file, aes_key, file_name)
-        self.files_handler.save_decrypted_file(
+        saved_path = self.files_handler.save_decrypted_file(
             self.client_name, file_name, decrypted_file_content)
 
         # Update database with file info
         self.database_handler.update_file_info(
-            self.client_id, self.client_name, file_name)
+            self.client_id, self.client_name, file_name, self.client_ip, saved_path)
         self.database_handler.update_crc(self.client_id, False)
 
         crc = self.encryption_handler.calculate_crc(
             self.client_name, file_name)
 
-        self.database_handler.update_last_seen(self.client_id)
+        self.database_handler.update_last_seen(self.client_id, self.client_ip)
 
         self.response_generator.set_crc(crc)
         return self.response_generator.response(FILE_TRANSFER_SUCCESS, request_parameters)
@@ -145,7 +149,7 @@ class NetworkHandler:
 
         self.database_handler.update_crc(self.client_id, crc_request)
 
-        self.database_handler.update_last_seen(self.client_id)
+        self.database_handler.update_last_seen(self.client_id, self.client_ip)
 
         return self.response_generator.response(CRC_FINISH, request_parameters)
 
@@ -154,6 +158,6 @@ class NetworkHandler:
         # request 1103 (FILE_TRANSFER_REQUEST) is about to be resent
 
     def handle_unknown_request(self, request_parameters):
-        self.database_handler.update_last_seen(self.client_id)
+        self.database_handler.update_last_seen(self.client_id, self.client_ip)
 
         return self.response_generator.response(INVALID_REQUEST, request_parameters)
