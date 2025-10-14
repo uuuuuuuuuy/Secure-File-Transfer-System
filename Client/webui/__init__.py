@@ -213,7 +213,8 @@ def create_app() -> Flask:
 
         if http_port_raw in (None, ""):
             # 留空表示沿用现有配置或使用默认端口。当 host 中包含端口时，
-            # 仍然优先使用 host 中的端口；否则保持之前保存的值。
+            # 仍然优先使用 host 中的端口；如果未指定端口且主机发生变化，
+            # 则回落到默认端口；否则保持之前保存的值。
             http_port_override_provided = False
         elif isinstance(http_port_raw, str) and http_port_raw.lower() == "default":
             http_port_override_provided = True
@@ -230,21 +231,28 @@ def create_app() -> Flask:
         existing_name = None
         existing_file = None
         existing_http_port = None
+        existing_host = None
         if transfer_file.exists():
             try:
                 info = transfer_file.read()
                 existing_name = info.client_name
                 existing_file = info.file_path
                 existing_http_port = info.server_http_port
+                existing_host = info.server_host
             except Exception:
                 existing_name = None
                 existing_file = None
                 existing_http_port = None
+                existing_host = None
+
+        host_changed = bool(existing_host) and existing_host != server_host
 
         if http_port_override_provided:
             http_port_to_save = http_port_override
         elif http_port_from_host is not None:
             http_port_to_save = http_port_from_host
+        elif host_changed:
+            http_port_to_save = None
         else:
             http_port_to_save = existing_http_port
 
