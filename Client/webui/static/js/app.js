@@ -46,6 +46,22 @@ function pushLog(message) {
   log.prepend(item);
 }
 
+function preventFormNavigation(form) {
+  if (!form || form.dataset.preventNavigation === "true") {
+    return;
+  }
+
+  const handler = (event) => {
+    if (event) {
+      event.preventDefault();
+    }
+  };
+
+  form.addEventListener("submit", handler, true);
+  form.addEventListener("submit", handler);
+  form.dataset.preventNavigation = "true";
+}
+
 async function fetchState() {
   try {
     const response = await fetch("/api/state");
@@ -231,21 +247,16 @@ async function postForm(url, formData) {
 
 function bindForms() {
   const asyncForms = document.querySelectorAll("form[data-async]");
-  asyncForms.forEach((form) => {
-    const prevent = (event) => {
-      if (event) {
-        event.preventDefault();
-      }
-    };
-    form.addEventListener("submit", prevent, true);
-    form.addEventListener("submit", prevent);
-  });
+  asyncForms.forEach((form) => preventFormNavigation(form));
 
   const serverForm = $("server-form");
   if (serverForm) {
     serverForm.addEventListener("submit", async (event) => {
       event.preventDefault();
       setMessage("server-message", "");
+      if (!serverForm.reportValidity()) {
+        return;
+      }
       const formData = new FormData(serverForm);
       try {
         const payload = {
@@ -268,6 +279,9 @@ function bindForms() {
     registerForm.addEventListener("submit", async (event) => {
       event.preventDefault();
       setMessage("auth-message", "");
+      if (!registerForm.reportValidity()) {
+        return;
+      }
       try {
         const clientName = new FormData(registerForm).get("clientName");
         const data = await postJson("/api/register", { clientName });
@@ -283,6 +297,9 @@ function bindForms() {
     loginForm.addEventListener("submit", async (event) => {
       event.preventDefault();
       setMessage("auth-message", "");
+      if (!loginForm.reportValidity()) {
+        return;
+      }
       const formData = new FormData(loginForm);
       try {
         const data = await postJson("/api/login", {
@@ -327,6 +344,9 @@ function bindForms() {
     fileForm.addEventListener("submit", async (event) => {
       event.preventDefault();
       setMessage("file-message", "");
+      if (!fileForm.reportValidity()) {
+        return;
+      }
       try {
         const formData = new FormData(fileForm);
         const data = await postForm("/api/upload-local", formData);
@@ -362,8 +382,17 @@ function bindForms() {
 }
 
 function init() {
-  fetchState();
-  bindForms();
+  try {
+    bindForms();
+    fetchState();
+  } catch (error) {
+    console.error("初始化客户端界面失败", error); // eslint-disable-line no-console
+    pushLog(`初始化界面失败：${error}`);
+  }
 }
 
-document.addEventListener("DOMContentLoaded", init);
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", init);
+} else {
+  init();
+}
