@@ -75,6 +75,7 @@ The repository now includes two lightweight browser-based helpers implemented wi
 
    - 查看客户端名称、ID、最近在线时间以及最近一次的连接 IP；
    - 查看最近的文件传输、存储路径以及 CRC 状态（已确认/待确认）；
+   - 使用“确认 CRC”按钮即时更新校验状态，实时刷新统计信息；
    - 一键跳转到“打开文件目录”页面，浏览服务器上保存的文件结构；
    - 获取当前服务器的监听端口和可访问的局域网地址，便于客户端配置。
 
@@ -106,6 +107,7 @@ The repository now includes two lightweight browser-based helpers implemented wi
 3. 打开 `http://127.0.0.1:5080`，即可：
 
    - 查看服务器地址、客户端 ID、AES 会话状态以及公钥指纹等基础信息；
+   - 配置服务器 TCP/HTTP 地址并写入 `transfer.info`，无需手动修改文件；
    - 使用简洁表单发起注册或登录；
    - 生成/轮换 RSA 密钥对、上传公钥并与服务器协商 AES；
    - 将文件保存到 `Client/uploads/` 并更新 `transfer.info`，随后继续运行原生 C++ 客户端完成发送。

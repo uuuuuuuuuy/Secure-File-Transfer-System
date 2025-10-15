@@ -17,6 +17,8 @@
       </div>
     </header>
 
+    <div id="banner" class="banner" hidden role="status"></div>
+
     <main class="layout">
       <section class="panel" id="totals-panel">
         <h2>统计信息</h2>
@@ -42,6 +44,7 @@
           <h3>服务器地址</h3>
           <ul id="server-hosts" class="host-list"></ul>
           <p class="port-info">TCP 监听端口：<span id="server-tcp-port">-</span></p>
+          <p class="port-info">HTTP 接口端口：<span id="server-http-port">-</span></p>
         </div>
       </section>
 
@@ -81,10 +84,11 @@
               <th>保存路径</th>
               <th>来源 IP</th>
               <th>CRC 状态</th>
+              <th>操作</th>
             </tr>
           </thead>
           <tbody id="transfers-body">
-            <tr class="empty"><td colspan="6">暂无记录</td></tr>
+            <tr class="empty"><td colspan="7">暂无记录</td></tr>
           </tbody>
         </table>
       </section>

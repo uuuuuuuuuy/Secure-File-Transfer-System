@@ -286,7 +286,7 @@ class DatabaseHandler:
             client_id, name, last_seen, last_ip, public_key, aes_key = row
             overview.append(
                 {
-                    "client_id": client_id.hex() if isinstance(client_id, (bytes, bytearray)) else client_id,
+                    "client_id": self._format_client_id(client_id),
                     "name": name,
                     "last_seen": last_seen,
                     "last_ip": last_ip or "",
@@ -303,7 +303,7 @@ class DatabaseHandler:
                 if limit is None:
                     cursor.execute(
                         """
-                        SELECT ClientID, ClientName, FileName, PathName, CRCVerified, ReceivedAt, ClientIP
+                        SELECT RowID, ClientID, ClientName, FileName, PathName, CRCVerified, ReceivedAt, ClientIP
                         FROM transfer_history
                         ORDER BY datetime(ReceivedAt) DESC
                         """
@@ -311,7 +311,7 @@ class DatabaseHandler:
                 else:
                     cursor.execute(
                         """
-                        SELECT ClientID, ClientName, FileName, PathName, CRCVerified, ReceivedAt, ClientIP
+                        SELECT RowID, ClientID, ClientName, FileName, PathName, CRCVerified, ReceivedAt, ClientIP
                         FROM transfer_history
                         ORDER BY datetime(ReceivedAt) DESC
                         LIMIT ?
@@ -322,10 +322,20 @@ class DatabaseHandler:
 
         transfers = []
         for row in rows:
-            client_id, client_name, file_name, path_name, crc_verified, received_at, client_ip = row
+            (
+                row_id,
+                client_id,
+                client_name,
+                file_name,
+                path_name,
+                crc_verified,
+                received_at,
+                client_ip,
+            ) = row
             transfers.append(
                 {
-                    "client_id": client_id.hex() if isinstance(client_id, (bytes, bytearray)) else client_id,
+                    "row_id": row_id,
+                    "client_id": self._format_client_id(client_id),
                     "client_name": client_name,
                     "file_name": file_name,
                     "path_name": path_name,
@@ -355,6 +365,35 @@ class DatabaseHandler:
             "transfers": total,
             "verified": verified,
             "pending": pending,
+        }
+
+    def set_transfer_verified(self, row_id: int, verified: bool):
+        with self.lock:
+            with self.connection as connection:
+                cursor = connection.cursor()
+                cursor.execute(
+                    "SELECT ClientID, ClientName, FileName FROM transfer_history WHERE RowID = ?",
+                    (row_id,),
+                )
+                row = cursor.fetchone()
+                if row is None:
+                    return None
+
+                client_id, client_name, file_name = row
+                cursor.execute(
+                    "UPDATE transfer_history SET CRCVerified = ? WHERE RowID = ?",
+                    (int(bool(verified)), row_id),
+                )
+                cursor.execute(
+                    "UPDATE files SET Verified = ? WHERE ID = ?",
+                    (int(bool(verified)), client_id),
+                )
+                connection.commit()
+
+        return {
+            "client_id": self._format_client_id(client_id),
+            "client_name": client_name,
+            "file_name": file_name,
         }
 
     def _ensure_schema(self):
@@ -451,3 +490,19 @@ class DatabaseHandler:
 
         raise TypeError(
             f"Unsupported client id type: {type(client_id)}")
+
+    @staticmethod
+    def _format_client_id(client_id):
+        if client_id is None:
+            return ""
+
+        if isinstance(client_id, memoryview):
+            client_id = client_id.tobytes()
+
+        if isinstance(client_id, bytearray):
+            client_id = bytes(client_id)
+
+        if isinstance(client_id, bytes):
+            return client_id.hex()
+
+        return str(client_id)

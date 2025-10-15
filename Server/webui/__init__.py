@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from flask import Flask, jsonify, render_template
+from flask import Flask, jsonify, render_template, request
 
 CURRENT_DIR = Path(__file__).resolve().parent
 PARENT_DIR = CURRENT_DIR.parent
@@ -150,6 +150,23 @@ def create_app() -> Flask:
                 "hostname": sorted(hostnames),
             }
         )
+
+    @app.post("/api/transfers/<int:row_id>/verify")
+    def verify_transfer(row_id: int):
+        payload = request.get_json(silent=True) or {}
+        verified = bool(payload.get("verified"))
+
+        result = database_handler.set_transfer_verified(row_id, verified)
+        if result is None:
+            return jsonify({"error": "未找到对应的传输记录"}), 404
+
+        message = "已标记为已确认" if verified else "已标记为待确认"
+        response = {
+            "message": message,
+            "verified": verified,
+            "transfer": result,
+        }
+        return jsonify(response)
 
     return app
 
