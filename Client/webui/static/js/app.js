@@ -72,6 +72,8 @@ const handleResponse = async (response) => {
   }
   updateSummary(data);
   if (data.message) pushLog(data.message);
+  if (data.logMessage && data.logMessage !== data.message)
+    pushLog(data.logMessage);
   return data;
 };
 
@@ -195,26 +197,12 @@ const bindFileForm = () => {
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     if (!form.reportValidity()) return;
-    setMessage("file-message", "");
+    setMessage("file-message", "正在保存并发送，请稍候……");
     try {
-      const data = await postForm("/api/upload-local", new FormData(form));
-      setMessage("file-message", data.message || "文件已保存");
+      const data = await postForm("/api/upload-and-send", new FormData(form));
+      setMessage("file-message", data.message || "文件已保存并发送");
     } catch (error) {
       setMessage("file-message", error.message, true);
-    }
-  });
-};
-
-const bindSendButton = () => {
-  const button = $("send-button");
-  if (!button) return;
-  button.addEventListener("click", async () => {
-    setMessage("send-message", "正在发送，请稍候……");
-    try {
-      const data = await postJson("/api/send", {});
-      setMessage("send-message", data.message || "文件已发送");
-    } catch (error) {
-      setMessage("send-message", error.message, true);
     }
   });
 };
@@ -226,7 +214,6 @@ const init = async () => {
   bindLoginForm();
   bindKeyButtons();
   bindFileForm();
-  bindSendButton();
 };
 
 document.addEventListener("DOMContentLoaded", init);

@@ -110,7 +110,7 @@ The repository now includes two lightweight browser-based helpers implemented wi
    - 配置服务器 TCP/HTTP 地址并写入 `transfer.info`，无需手动修改文件；
    - 使用简洁表单发起注册或登录；
    - 生成/轮换 RSA 密钥对、上传公钥并与服务器协商 AES；
-   - 将文件保存到 `Client/uploads/` 并更新 `transfer.info`，随后继续运行原生 C++ 客户端完成发送。
+   - 通过“保存并发送”表单，一次性将文件保存到 `Client/uploads/`、更新 `transfer.info` 并完成加密上传。
 
    所有敏感材料仍保存在客户端磁盘上，Web 界面只做状态展示与操作入口。
 

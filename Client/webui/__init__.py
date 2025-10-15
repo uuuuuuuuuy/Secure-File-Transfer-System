@@ -4,7 +4,7 @@ from __future__ import annotations
 import base64
 import os
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
@@ -47,6 +47,15 @@ def create_app() -> Flask:
             remote_client = RemoteClient(base_url)
         return remote_client
 
+    def sanitize_message(raw_message: Optional[str], *, default: str) -> Tuple[str, Optional[str]]:
+        if isinstance(raw_message, str):
+            trimmed = raw_message.strip()
+            if trimmed and "\n" not in trimmed and len(trimmed) <= 160:
+                return trimmed, None
+            if trimmed:
+                return default, trimmed
+        return default, None
+
     def encrypt_file_for_upload(path: Path, aes_key_b64: str) -> Tuple[str, int]:
         raw = path.read_bytes()
         key = base64.b64decode(aes_key_b64)
@@ -60,6 +69,16 @@ def create_app() -> Flask:
         ciphertext = encryptor.update(padded) + encryptor.finalize()
         payload = base64.b64encode(iv + ciphertext).decode("ascii")
         return payload, len(raw)
+
+    def perform_send(file_path: Path, client: RemoteClient) -> Dict[str, Any]:
+        aes_key = state_store.get_aes_key()
+        if not aes_key:
+            raise ValueError("尚未保存 AES 会话密钥，请先完成登录或密钥交换。")
+
+        encrypted_payload, plain_size = encrypt_file_for_upload(file_path, aes_key)
+        server_response = client.upload_file(file_path.name, encrypted_payload, plain_size)
+        state_store.record_send(file_path.name)
+        return server_response
 
     def serialize_state():
         transfer_info = None
@@ -198,14 +217,20 @@ def create_app() -> Flask:
         state_store.clear()
 
         response = serialize_state()
+        display_message, suppressed_message = sanitize_message(
+            data.get("message"), default="注册成功"
+        )
+
         response.update(
             {
                 "clientId": client_id,
                 "publicKeyFingerprint": key_manager.public_key_fingerprint(),
                 "publicKeyCreatedAt": key_manager.public_key_created_at(),
-                "message": data.get("message", "注册成功"),
+                "message": display_message,
             }
         )
+        if suppressed_message:
+            app.logger.debug("register response message suppressed: %s", suppressed_message)
         return jsonify(response), 201
 
     @app.post("/api/login")
@@ -240,13 +265,19 @@ def create_app() -> Flask:
             except Exception as exc:  # pylint: disable=broad-except
                 return jsonify({"error": f"解密服务器返回的 AES 密钥失败: {exc}"}), 500
 
+        display_message, suppressed_message = sanitize_message(
+            data.get("message"), default="登录成功"
+        )
+
         response = serialize_state()
         response.update(
             {
-                "message": data.get("message", "登录成功"),
+                "message": display_message,
                 "encryptedAESKey": encrypted_aes,
             }
         )
+        if suppressed_message:
+            app.logger.debug("login response message suppressed: %s", suppressed_message)
         return jsonify(response)
 
     @app.post("/api/key-exchange")
@@ -276,13 +307,19 @@ def create_app() -> Flask:
             except Exception as exc:  # pylint: disable=broad-except
                 return jsonify({"error": f"解密服务器返回的 AES 密钥失败: {exc}"}), 500
 
+        display_message, suppressed_message = sanitize_message(
+            data.get("message"), default="密钥交换成功"
+        )
+
         response = serialize_state()
         response.update(
             {
-                "message": data.get("message", "密钥交换成功"),
+                "message": display_message,
                 "encryptedAESKey": encrypted_aes,
             }
         )
+        if suppressed_message:
+            app.logger.debug("key-exchange message suppressed: %s", suppressed_message)
         return jsonify(response)
 
     @app.post("/api/keys")
@@ -328,6 +365,62 @@ def create_app() -> Flask:
         )
         return jsonify(response)
 
+    @app.post("/api/upload-and-send")
+    def upload_and_send():
+        if not transfer_file.exists():
+            return jsonify({"error": "找不到 transfer.info，请先配置客户端。"}), 400
+        if "file" not in request.files:
+            return jsonify({"error": "请选择需要上传的文件"}), 400
+        file = request.files["file"]
+        if not file or not file.filename:
+            return jsonify({"error": "请选择需要上传的文件"}), 400
+
+        filename = secure_filename(file.filename)
+        uploads_dir = base_dir / "uploads"
+        uploads_dir.mkdir(parents=True, exist_ok=True)
+        destination = uploads_dir / filename
+        file.save(destination)
+
+        try:
+            transfer_file.update(file_path=str(destination))
+        except Exception as exc:  # pylint: disable=broad-except
+            return jsonify({"error": f"写入 transfer.info 失败: {exc}"}), 500
+
+        try:
+            client = get_remote_client()
+        except Exception as exc:  # pylint: disable=broad-except
+            return jsonify({"error": f"读取服务器配置失败: {exc}"}), 500
+
+        try:
+            server_response = perform_send(destination, client)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except RemoteClientError as exc:
+            return jsonify({"error": str(exc)}), 502
+        except Exception as exc:  # pylint: disable=broad-except
+            return jsonify({"error": f"上传失败: {exc}"}), 500
+
+        display_message, suppressed_message = sanitize_message(
+            server_response.get("message"), default="文件已发送"
+        )
+
+        final_message = "文件已保存并发送"
+        if display_message and display_message != "文件已发送":
+            final_message = f"文件已保存并发送：{display_message}"
+
+        response = serialize_state()
+        response.update(
+            {
+                "message": final_message,
+                "serverCrc": server_response.get("crc"),
+                "serverFileSize": server_response.get("fileSize"),
+                "savedPath": str(destination),
+            }
+        )
+        if suppressed_message:
+            app.logger.debug("upload-and-send server message suppressed: %s", suppressed_message)
+        return jsonify(response)
+
     @app.post("/api/send")
     def send_file():
         if not transfer_file.exists():
@@ -345,37 +438,34 @@ def create_app() -> Flask:
         if not file_path.is_file():
             return jsonify({"error": "待发送文件不存在或已被移动，请重新选择。"}), 400
 
-        aes_key = state_store.get_aes_key()
-        if not aes_key:
-            return jsonify({"error": "尚未保存 AES 会话密钥，请先完成登录或密钥交换。"}), 400
-
-        try:
-            encrypted_payload, plain_size = encrypt_file_for_upload(file_path, aes_key)
-        except Exception as exc:  # pylint: disable=broad-except
-            return jsonify({"error": f"加密文件失败: {exc}"}), 500
-
         try:
             client = get_remote_client()
         except Exception as exc:  # pylint: disable=broad-except
             return jsonify({"error": f"读取服务器配置失败: {exc}"}), 500
 
         try:
-            server_response = client.upload_file(file_path.name, encrypted_payload, plain_size)
+            server_response = perform_send(file_path, client)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
         except RemoteClientError as exc:
             return jsonify({"error": str(exc)}), 502
         except Exception as exc:  # pylint: disable=broad-except
             return jsonify({"error": f"上传失败: {exc}"}), 500
 
-        state_store.record_send(file_path.name)
+        display_message, suppressed_message = sanitize_message(
+            server_response.get("message"), default="文件已发送"
+        )
 
         response = serialize_state()
         response.update(
             {
-                "message": server_response.get("message", "文件已发送"),
+                "message": display_message,
                 "serverCrc": server_response.get("crc"),
                 "serverFileSize": server_response.get("fileSize"),
             }
         )
+        if suppressed_message:
+            app.logger.debug("send server message suppressed: %s", suppressed_message)
         return jsonify(response)
 
     @app.get("/public-key")

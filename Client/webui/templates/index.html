@@ -118,11 +118,10 @@
           <label for="file-input">选择要发送的文件</label>
           <input id="file-input" name="file" type="file" required>
           <p class="hint">文件会保存到客户端 uploads/ 目录，并写入 transfer.info 的路径。</p>
-          <button type="submit">保存到本地并更新配置</button>
+          <p class="hint">提交后会自动完成加密并发送到服务器。</p>
+          <button type="submit" class="primary">保存并发送文件</button>
         </form>
-        <button id="send-button" type="button" class="primary">加密并发送当前文件</button>
         <p class="message" id="file-message"></p>
-        <p class="message" id="send-message"></p>
       </section>
 
       <section class="panel">
