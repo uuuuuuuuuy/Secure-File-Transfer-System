@@ -1,81 +1,89 @@
-# （半）安全文件传输系统 :lock:
+# (Semi) Secure File Transfer System :lock:
 
-安全文件传输系统旨在帮助客户端与服务器之间安全地传输文件。它允许客户端注册到数据库、交换加密密钥，并以安全方式向服务器发送文件。整个系统按照典型的客户端-服务器架构工作，力图在传输过程中保护数据的机密性与完整性。
+The Secure File Transfer System is designed to facilitate secure file transfers between clients and a server. It allows clients to register in a database, exchange encryption keys, and securely send files to the server. The system operates in a client-server architecture and attempts to ensure data confidentiality and integrity during file transmission.
 
-## 目录
-- [环境要求](#环境要求)
-- [快速开始](#快速开始)
-- [功能概览](#功能概览)
-- [通信协议](#通信协议)
-- [最简 Web UI](#最简-web-ui)
-- [加密方式](#加密方式)
-- [负载内容](#负载内容)
-- [已知漏洞与薄弱点](#已知漏洞与薄弱点)
+This is the final project I completed as part of the course [Defensive System Programming (20937)](https://www-e.openu.ac.il/courses/20937.htm) at the Open University of Israel.
 
-## 环境要求
+The project implements a partially secure file transfer protocol designed for transferring relatively small files. The server is written in Python 3.9, the client is written in C++11, and the database is managed with MySQL.
 
-要成功编译并运行安全文件传输系统，需要安装以下软件和库：
+The full project specifications can be found [here](readme/project_specifications.pdf) (Hebrew).
 
-### Python 服务器端
+## Table of Contents
+- [Requirements](#requirements)
+- [Getting Started](#getting-started)
+- [Features](#features)
+- [Communication Protocol](#communication-protocol)
+- [Minimal Web UI](#minimal-web-ui)
+- [Encryption](#encryption)
+- [Payload Content](#payload-content)
+- [Vulnerabilities and Weaknesses](#vulnerabilities-and-weaknesses)
 
-- **Python**：请确保系统中安装了 Python 3.9 或兼容版本。
-- **Crypto.Cipher**：服务器端的加解密依赖 Crypto.Cipher，可通过以下命令安装 `pycryptodome`：
-  ```bash
-  pip install pycryptodome
-  ```
+## Requirements
 
-### C++ 客户端
+To successfully use and compile the Secure File Transfer System, you will need the following software and libraries installed:
 
-- **C++11**：客户端使用 C++11 编写，需要一个兼容 C++11 的编译器。
-- **Crypto++（版本 8.7.0）**：用于客户端的加密操作，可从官网下载安装：[Crypto++ Library (Version 8.7.0)](https://www.cryptopp.com/release870.html)。
-- **Boost C++ Libraries（版本 1.81.0）**：本项目使用 Boost 提供网络处理能力，可从官网获取并安装：[Boost C++ Libraries (Version 1.81.0)](https://www.boost.org/users/history/version_1_81_0.html)。
+### For the Python Server:
 
-## 快速开始
+- **Python**: Ensure you have Python 3.9 or a compatible version installed on your system.
 
-使用项目时可按照以下步骤操作：
+- **Crypto.Cipher**: You will need the Crypto.Cipher library for encryption. You can install it using pip with the following command: ```pip install pycryptodome```.
 
-1. 使用 C++ 编译客户端程序。
-2. 确保 `info.transfer` 文件中配置了服务器 IP、端口、客户端名称以及待发送文件路径。
-3. 启动并配置 Python 服务器，使其能与客户端通信。
-4. 运行客户端程序，若尚未注册则向服务器注册，或执行其他文件传输操作。
 
-## 最简 Web UI
+### For the C++ Client:
 
-当前仓库提供了两个基于 Flask 的轻量级浏览器界面，帮助快速串联完整的业务流程。
+- **C++11**: The server is written in C++11, so you'll need a C++11 compatible compiler. Make sure you have a suitable compiler installed.
 
-### 服务器控制台（HTTP 接入层）
+- **Crypto++ (Version 8.7.0)**: Crypto++ is used for cryptographic operations. You can download and install Crypto++ from the official website: [Crypto++ Library (Version 8.7.0)](https://www.cryptopp.com/release870.html).
 
-服务器端提供了一个非常朴素的 Web 界面，每一步都直接映射到原有协议：注册、上传公钥、提交文件以及 CRC 回执。它只是对既有 Python 逻辑的薄封装，方便调试最小可用流程。
+- **Boost C++ Libraries (Version 1.81.0)**: Boost provides a wide range of useful C++ libraries. In this project it is used for the network handling. You can download and install Boost from the official website: [Boost C++ Libraries (Version 1.81.0)](https://www.boost.org/users/history/version_1_81_0.html).
 
-1. 安装服务器依赖：
+
+## Getting Started
+
+To use the project, follow these steps:
+
+1. Compile the client program using C++.
+
+2. Ensure that the `info.transfer` file is properly configured with the server's IP address, port number, client name, and file path.
+
+3. The Python server should also be running and configured to communicate with clients.
+
+4. Run the client program to register with the server (if not registered) or perform other file transfer operations.
+
+## Minimal Web UI
+
+The repository now includes two lightweight browser-based helpers implemented with Flask to streamline the end-to-end workflow.
+
+### Server 控制台（监控面板）
+
+服务器端现在提供了一个只读的监控面板，用于展示注册的客户端、最近的文件传输以及 CRC 确认状态。它不会改变既有协议，只是聚合数据库与文件系统中的信息，帮助管理员在浏览器里快速了解运行状况并打开保存目录。
+
+1. Install the server dependencies:
 
    ```bash
    cd Server
    pip install -r requirements.txt
    ```
 
-2. 启动 HTTP 服务（可以与传统 TCP 服务器并行运行）：
+2. Start the HTTP service (it can run alongside the legacy TCP server):
 
    ```bash
    flask --app webui.app run --host 0.0.0.0 --port 5000
    ```
 
-3. 打开 `http://localhost:5000`，即可按顺序使用基础表单：
+3. 打开 `http://localhost:5000`，即可：
 
-   - 注册或登录指定客户端；
-   - 在浏览器中生成或粘贴公钥，完成密钥交换（私钥不会离开浏览器）；
-   - 上传经 AES 加密的文件，让服务器按原逻辑解密并计算 CRC；
-   - 通过按钮确认 CRC 状态，并查看该客户端的上传记录。
+   - 查看客户端名称、ID、最近在线时间以及最近一次的连接 IP；
+   - 查看最近的文件传输、存储路径以及 CRC 状态（已确认/待确认）；
+   - 使用“确认 CRC”按钮即时更新校验状态，实时刷新统计信息；
+   - 一键跳转到“打开文件目录”页面，浏览服务器上保存的文件结构；
+   - 获取当前服务器的监听端口和可访问的局域网地址，便于客户端配置。
 
-> **说明**：该界面不会新增业务判断，所有请求仍落在现有的数据库、加密与文件处理模块中。
-
-> **定位补充**：这些表单只是把服务器原本需要对接客户端的接口“搬”到浏览器里，方便管理员在没有正式客户端时复现协议。例如注册/登录按钮会写入或读取服务器端数据库，以验证流程是否正常，但它们不会删除客户端条目，也不会让服务器自己向自己发起传输；所有文件与密钥仍然来自真实客户端或测试数据。
-
-> **关于文件与密钥可见性**：按照协议，服务器会保存客户端上传的 RSA 公钥、生成并保管 AES 会话密钥，并在接收到加密文件后执行解密、CRC 校验与落盘。因此，服务器管理员能够查看这些解密后的文件内容；WebUI 上传的确会在数据库里生成真实的客户端 ID、文件记录和存储文件。
+> **说明**：监控面板只负责展示数据，不会修改数据库或触发协议中的操作。
 
 ### 客户端本地 WebUI（仅监听 127.0.0.1）
 
-客户端目录下的本地面板聚焦于读取和维护 `transfer.info`、`me.info`、密钥文件以及待发送的本地文件。它与服务器端职责清晰分离，只负责触发客户端应执行的动作。
+客户端目录下的本地面板聚焦于读取和维护 `transfer.info`、`me.info`、密钥文件以及待发送的本地文件。它和服务器端职责清晰分离，只负责触发客户端应做的动作。
 
 1. 安装客户端 WebUI 依赖：
 
@@ -90,7 +98,7 @@
    python -m webui.app
    ```
 
-   或使用 Flask 命令：
+   或者使用 Flask 命令：
 
    ```bash
    flask --app webui.app run --host 127.0.0.1 --port 5080
@@ -99,192 +107,215 @@
 3. 打开 `http://127.0.0.1:5080`，即可：
 
    - 查看服务器地址、客户端 ID、AES 会话状态以及公钥指纹等基础信息；
+   - 配置服务器 TCP/HTTP 地址并写入 `transfer.info`，无需手动修改文件；
    - 使用简洁表单发起注册或登录；
-   - 生成或轮换 RSA 密钥对、上传公钥并与服务器协商 AES；
-   - 将文件保存到 `Client/uploads/` 并更新 `transfer.info`，随后继续运行原生 C++ 客户端完成发送。
+   - 生成/轮换 RSA 密钥对、上传公钥并与服务器协商 AES；
+   - 通过“保存并发送”表单，一次性将文件保存到 `Client/uploads/`、更新 `transfer.info` 并完成加密上传。
 
-   所有敏感材料仍保存在客户端磁盘上，Web 界面仅提供状态展示和操作入口。
+   所有敏感材料仍保存在客户端磁盘上，Web 界面只做状态展示与操作入口。
 
-## 功能概览
+## Features
 
-### 注册流程
-- 如果客户端缺少注册文件（`me.info`），会从 `transfer.info` 中读取用户信息并向服务器发送注册请求。
-- 服务器返回唯一的客户端 ID，客户端将其写入 `me.info`。
+### Registration
+- If the client does not have a registration file (`me.info`), it will read user information from the transfer file (`transfer.info`) and send a registration request to the server.
+- The server responds with a unique client ID, which the client stores in `me.info`.
 
-### 公钥生成
-- 客户端生成 RSA 公私钥对，并将公钥发送给服务器。
-- 服务器使用接收到的公钥加密 AES 密钥并回传给客户端。
+### Public Key Generation
+- Clients generate RSA key pairs (public and private keys) and send their public key to the server.
+- The server uses the received public key to encrypt and send an AES key back to the client.
 
-### 文件传输
-- 客户端获取 AES 密钥后，使用私钥解密，并通过该密钥加密欲发送的文件。
-- 加密后的文件被传输至服务器。
-- 客户端与服务器都会计算文件的 CRC 以校验完整性。
+### File Transfer
+- After receiving the AES key, the client decrypts it using its private RSA key and uses it to encrypt the file it wants to send.
+- The encrypted file is then sent to the server.
+- Both the client and server calculate the CRC of the file for integrity verification.
 
-### 异常处理
-- 遇到服务器错误时，客户端会最多重试三次发送消息。
-- 若仍然失败，客户端会输出详细的 “Fatal” 信息并退出。
+### Error Handling
+- In case of server errors, the client retries sending the message up to three times.
+- If unsuccessful, the client exits with a detailed "Fatal" message.
 
-## 通信协议
+## Communication Protocol
 
-### 服务器端工作流程
+### How the Server Works
 
-1. 服务器从 `port.info` 文件读取监听端口。
-2. 服务器监听来自客户端的连接请求。
-3. 当与客户端建立连接后，服务器处理包括注册、文件传输、重新连接等在内的多种请求。
-4. 为了管理客户端和文件信息，服务器会与数据库交互，保存客户端的 UUID、公钥、最后在线时间以及文件名称、存储路径和校验状态等数据。
-5. 当客户端请求发送文件时，服务器接收文件内容，执行解密与 CRC 校验，并将文件保存到指定位置。
-6. 服务器通过二进制通信协议与客户端交互，根据不同的请求码返回相应响应。
-7. 服务器实现了健壮的错误处理与校验机制，以保障系统安全与完整性。
+1. The server reads the port number from the `port.info` file to determine the port on which it should listen.
 
-### 客户端工作流程
+2. It listens for incoming connection requests from clients.
 
-1. 客户端从 `transfer.info` 与 `me.info` 中读取服务器 IP、端口等信息。
-2. 根据读取到的 IP 与端口与服务器建立连接。
-3. 客户端从 `me.info` 中读取自身信息，包括需要运行的可执行文件名。
-4. 客户端进入批处理模式，运行指定的可执行文件并准备向服务器发送数据。
-5. 客户端通过 CryptoPP 库执行包括加密、签名在内的多种加密操作。
-6. 按照通信协议构造二进制报文，并通过 TCP 连接发送给服务器。
-7. 客户端可能向服务器发送文件、信息请求或错误响应等不同类型的数据。
-8. 为确保通信可靠性，客户端实现了对服务器响应的错误处理与校验逻辑。
-9. 客户端在通信中会使用 UUID 作为唯一标识。
-10. 向服务器发送数据时，会关注大小端序等细节，确保传输格式正确。
-11. 客户端负责处理服务器返回的错误与响应，维持通信的完整性。
+3. Upon establishing a connection with a client, the server handles various client requests and actions, including registration, file transfers, and re-connect requests.
 
-### 注册请求流程示意
+4. To manage client and file information, the server interacts with a database. It stores details about clients, such as their UUIDs, public keys, and last seen timestamps. Additionally, it maintains data regarding files, including file names, paths, and verification status.
+
+5. When a client requests to send a file, the server receives the file content, performs cryptographic operations to decrypt and verify the file's integrity using CRC, and then stores the file in the appropriate location.
+
+6. The server communicates with clients using a binary communication protocol, responding to various request codes and sending appropriate responses.
+
+7. Robust error handling and validation mechanisms are implemented to ensure the security and integrity of the system.
+
+### How the Client Works
+
+1. The client reads the server's information, such as its IP address and port, from the `transfer.info` and `me.info` files.
+
+2. It establishes a connection with the server using the provided server IP and port.
+
+3. The client reads its own information from the `me.info` file, including the file name of the executable to run.
+
+4. The client then enters batch mode, executing the specified executable and preparing to send data to the server.
+
+5. The client uses the CryptoPP library to perform cryptographic operations, including encryption and signing, on the data it intends to send to the server.
+
+6. It constructs a binary packet, adhering to the communication protocol, and sends it to the server over a TCP connection.
+
+7. The client may send various types of data to the server, such as file transfers, requests for information, and error responses.
+
+8. Error handling and validation mechanisms are implemented to handle server responses and ensure the reliability of the communication.
+
+9. The client may use a UUID as a unique identifier when communicating with the server.
+
+10. Data sent to the server is packaged, and special attention is given to endianness during data transmission.
+
+11. The client handles errors and responses from the server and maintains communication integrity.
+
+
+### Here is a chart flow of a registration request:
 
 <img src="readme/protocol-registration.jpg" width=50% height=50%>
 
-### 重新连接流程示意
+
+### And here's what a reconnect looks like:
 
 <img src="readme/protocol-reconnect.jpg" width=50% height=50%>
 
-## 加密方式
 
-- **对称加密**：文件内容使用 128 位密钥的 CBC-AES 加密，初始向量（IV）默认为全零。
-- **非对称加密**：使用 1024 位 RSA，用于客户端与服务器之间的密钥交换。
+## Encryption
 
-## 负载内容
+- **Symmetric Encryption**: CBC-AES with a 128-bit key length is used for symmetric encryption of file content. Initialization Vectors (IVs) are assumed to be zero-filled.
+  
+- **Asymmetric Encryption**: RSA with 1024-bit key length is used for asymmetric encryption, primarily for exchanging encryption keys between clients and the server.
 
-不同的请求或响应类型对应不同的负载结构。
+## Payload Content
 
-### *客户端请求*
+The payload content varies depending on the type of request/response. Each payload has a different structure.
 
-发送给服务器的请求由请求头与请求体组成：
+### *Client Requests:*
 
-#### 请求头
-字段      | 含义
+Requests to the server have a structured format combined of both:
+
+#### Request Header
+Field      | Meaning
 -----------|--------
-ID Client  | 客户端唯一标识（128 位）。
-Version    | 客户端版本号。
-Code       | 请求代码。
+ID Client  | Unique identifier for each client (128 bits).
+Version    | Client version number.
+Code       | Request code.
 
 *&*
 
-#### 请求体
-字段      | 含义
+#### Request Payload Content
+Field      | Meaning
 -----------|--------
-payload    | 可变长度，根据请求类型不同而变化。
+payload    | Variable - Request content, varies depending on the request.
 
-#### 请求 1100 – 注册
-字段   | 含义
+
+#### Request 1100 – Registration
+Field   | Meaning
 --------|--------
-Name    | 用户名的 ASCII 字符串，包含结尾的空字符。
+Name    | ASCII string representing the user's name, including a null terminator character (null-terminated).
 
-* 说明：服务器会忽略请求头中的客户端 ID 字段。
+* Note: The server ignores the ID Client field.
 
-#### 请求 1101 – 公钥传输
-字段      | 含义
+#### Request 1101 – Public Key Transmission
+Field      | Meaning
 -----------|--------
-Name       | 用户名的 ASCII 字符串，包含结尾的空字符。
-Key Public | 客户端的公钥。
+Name       | ASCII string representing the user's name, including a null terminator character (null-terminated).
+Key Public | Client's public key.
 
-#### 请求 1102 – 重新登录（客户端已注册）
-字段   | 含义
+#### Request 1102 – Re-login (if the client has registered before)
+Field   | Meaning
 --------|--------
-Name    | 用户名的 ASCII 字符串，包含结尾的空字符。
+Name    | ASCII string representing the user's name, including a null terminator character (null-terminated).
 
-#### 请求 1103 – 文件传输
-字段           | 含义
+#### Request 1103 – File Transmission
+Field           | Meaning
 ----------------|--------
-Name File       | 发送文件的名称。
-Content Message | 使用对称密钥加密后的文件内容（可变长度）。
+Name File       | Name of the sent file.
+Content Message | Variable content of the file, encrypted using a symmetric key.
 
-#### 请求 1104 – CRC 正确
-字段   | 含义
+#### Request 1104 – Valid CRC
+Field   | Meaning
 --------|--------
-Name File | 发送文件的名称。
+Name File | Name of the sent file.
 
-#### 请求 1105 – CRC 错误，重传（跟随请求 1103）
-字段   | 含义
+#### Request 1105 – Invalid CRC, Resend (after Request 1103)
+Field   | Meaning
 --------|--------
-Name File | 发送文件的名称。
+Name File | Name of the sent file.
 
-#### 请求 1106 – 连续四次 CRC 错误，放弃
-字段   | 含义
+#### Request 1106 – Invalid CRC for the Fourth Time, Giving Up
+Field   | Meaning
 --------|--------
-Name File | 发送文件的名称。
+Name File | Name of the sent file.
 
-### *服务器响应*
-字段         | 含义
+### *Server Response:*
+Field         | Meaning
 --------------|--------
-Header        | 响应头信息。
-Version       | 服务器版本号。
-Code          | 响应代码。
-size Payload  | 响应体大小。
-Payload       | 根据响应代码不同而变化的内容。
+Header        | Header information.
+Version       | Server version number.
+Code          | Response code.
+size Payload  | Size of the response payload.
+Payload       | Variable response content based on the response code.
 
-#### 响应 2100 – 注册成功
-字段    | 含义
+#### Response 2100 – Successful Registration
+Field    | Meaning
 ---------|--------
-ID Client| 客户端唯一标识。
+ID Client| Unique client identifier.
 
-#### 响应 2101 – 注册失败
-字段    | 含义
+#### Response 2101 – Registration Failed
+Field    | Meaning
 ---------|--------
-ID Client| 客户端唯一标识。
+ID Client| Unique client identifier.
 
-#### 响应 2102 – 接收公钥，返回加密的 AES 密钥
-字段          | 含义
+#### Response 2102 – Received Public Key, Sending Encrypted AES Key
+Field          | Meaning
 ---------------|--------
-ID Client      | 客户端唯一标识。
-Symmetric Key  | 返回给客户端的加密对称密钥。
+ID Client      | Unique client identifier.
+Symmetric Key  | Encrypted symmetric key for the client.
 
-#### 响应 2103 – 文件接收成功并包含 CRC
-字段           | 含义
+#### Response 2103 – File Received Successfully with CRC
+Field           | Meaning
 ----------------|--------
-ID Client       | 发送方客户端标识。
-Size Content    | 解密后文件大小。
-Name File       | 接收文件名称。
-CRC             | 校验和。
+ID Client       | Unique sender client identifier.
+Size Content    | Size of the received file (after decryption).
+Name File       | Name of the received file.
+CRC             | Checksum.
 
-#### 响应 2104 – 确认消息
-字段    | 含义
+#### Response 2104 – Message Acknowledged, Thank You
+Field    | Meaning
 ---------|--------
-ID Client| 客户端唯一标识。
+ID Client| Unique client identifier.
 
-#### 响应 2105 – 重新登录成功，返回加密的 AES 密钥（同 2102）
-字段          | 含义
+#### Response 2105 – Approving Re-login Request, Sending Encrypted AES Key (Same as Code 2102)
+Field          | Meaning
 ---------------|--------
-ID Client      | 客户端唯一标识。
-Symmetric Key  | 返回给客户端的加密对称密钥。
+ID Client      | Unique client identifier.
+Symmetric Key  | Encrypted symmetric key for the client.
 
-#### 响应 2106 – 重新登录失败（客户端未注册或公钥无效）
-字段    | 含义
+#### Response 2106 – Re-login Request Denied (Client Not Registered or Invalid Public Key)
+Field    | Meaning
 ---------|--------
-ID Client| 客户端唯一标识。
+ID Client| Unique client identifier.
 
-#### 响应 2107 – 服务器通用错误（未处理情况，如磁盘空间不足或数据库异常）
-字段    | 含义
+#### Response 2107 – General Server Error (Unhandled Cases, e.g., Disk Space Exhausted or Database Failure)
+Field    | Meaning
 ---------|--------
-ID Client| 客户端唯一标识。
+ID Client| Unique client identifier.
 
-## 已知漏洞与薄弱点
+## Vulnerabilities and Weaknesses
 
-| 漏洞类型 | 描述 | 解决方案 |
-|----------|------|----------|
-| 服务器崩溃 | 攻击者可能故意导致服务器崩溃，进而破坏数据库或使服务不可用。 | 通过修复 `server.py` 与 `server.db` 中的问题来防止崩溃，并加入完善的错误处理与输入校验，避免异常输入触发崩溃。 |
-| DDoS 攻击 | 攻击者可能发送大量请求或文件导致服务器或操作系统资源耗尽。 | 在项目允许的范围内，通过限制每个 IP 的连接数以及单个用户允许上传的文件数量来降低风险。但这些手段仍较为基础，无法抵御现代攻击；真实场景可结合 Cloudflare 等服务进一步防护。 |
-| 未授权的数据库访问 | SQL 注入可能让攻击者获取未授权访问；此外并发操作可能导致数据库损坏。 | 实施严格的输入校验与清洗，防止 SQL 注入，同时使用互斥保护避免并发写入造成的数据损坏。 |
-| 目录遍历攻击 | 攻击者可能通过恶意输入访问服务器上的敏感路径。 | 对输入执行校验与清洗，仅允许访问受信任的目录和文件，阻断目录遍历。 |
-| 缓冲区/整数溢出 | C++ 代码中可能出现缓冲区或整数溢出问题。 | 在 C++ 代码中引入边界检查与数据校验，遵循安全库与最佳实践，例如使用 `string` 替代裸指针。 |
-| 冒充攻击 | 存在中间人攻击风险。 | 虽然项目实现了类似 TLS 的流程，但 UUID 仍可能被监听者获知。由于项目规范未要求，暂未提供解决方案；在真实场景应对 UUID 进行加密保护。 |
+| Vulnerability                       | Description                                                                                          | Solution                                                                                                                                                                                                                                                                 |
+|-------------------------------------|------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Server Crash                        | Attacker may cause a deliberate server crash that will corrupt database or take down the server.                   | Vulnerabilities in server.py and server.db were addressed to prevent server crashes. Proper error handling and input validation mechanisms were implemented to prevent crashes caused by unexpected inputs or situations.                                                                          |
+| DDoS Attacks                        | The attacker can send multiple requests, potentially leading to a server crash due to request overflow or causing the operating system to crash by overwhelming it with a large number of files until available storage is exhausted.              | Measures were taken to mitigate the risk of Distributed Denial of Service attacks as much as a simple project like this allows by limiting connections per IP and files amount permitted per user. Yet, the measures taken are pretty basic and do not protect against any modern attack. Services like Cloudflare would be integrated in a real scenario, to mitigate this sort of attacks.                    |
+| Unauthorized Database Access        | SQL injections may allow attacker to gain unauthorized access. Additionallym, if 2 users make a concurrent action on the database, a corruption may happen which potentially can corrupt data.                 | Strong input validation and sanitization techniques were implemented to prevent SQL injection vulnerabilities. Mutual exclusive protectionwas implemented to safeguard against potential data corruption.            |
+| Directory Traversal Attack     | Attacker may traverse the server's directory through toxic input.                              | Input validation and sanitization processes were applied to mitigate directory traversal attempts. User access was restricted to approved directories and files only.                                              |
+| Buffer/Integer Overflow             | Buffer and integer overflow issues in C++ code.                          | Strict bounds checking and data validation logic were introduced in the C++ code segments. Secure libraries and best practices for buffer management and integer handling were followed to eliminate overflow vulnerabilities of vulnerable methods. For exxample, using ```string``` instead of ```char*```.                        |
+| Impersonation                       | Man-in-the-Middle attacks.  | Even though this project is implementing a semi-TLS protocol. the UUID is initially available to an attacker that may listen to the client. As part of this project, a solution was not provided as the specifications of the project didn't stipulate it, but in a real scenario, an encryption of the UUID would be performed as well. |
+

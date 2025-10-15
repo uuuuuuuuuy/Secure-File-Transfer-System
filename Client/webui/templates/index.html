@@ -9,16 +9,24 @@
   <body>
     <header class="page-header">
       <h1>安全文件传输 · 客户端面板</h1>
-      <p>查看本地配置、注册状态，并管理公钥与待发送文件。</p>
+      <p>配置服务器、管理注册信息，并直接在本地面板中完成加密发送。</p>
     </header>
 
     <main class="layout">
-      <section class="panel">
-        <h2>当前配置</h2>
+      <section class="panel summary-panel">
+        <h2>当前状态</h2>
         <dl class="summary-list">
           <div>
-            <dt>服务器地址</dt>
-            <dd id="summary-server">-</dd>
+            <dt>TCP 服务端</dt>
+            <dd id="summary-server-tcp">-</dd>
+          </div>
+          <div>
+            <dt>HTTP 接口</dt>
+            <dd id="summary-server-http">-</dd>
+          </div>
+          <div>
+            <dt>HTTP 端口来源</dt>
+            <dd id="summary-http-source">-</dd>
           </div>
           <div>
             <dt>客户端名称</dt>
@@ -33,6 +41,22 @@
             <dd id="summary-aes">未协商</dd>
           </div>
           <div>
+            <dt>最近密钥交换</dt>
+            <dd id="summary-last-key">-</dd>
+          </div>
+          <div>
+            <dt>最近发送</dt>
+            <dd id="summary-last-send">-</dd>
+          </div>
+          <div>
+            <dt>最近发送文件</dt>
+            <dd id="summary-last-send-file">-</dd>
+          </div>
+          <div>
+            <dt>待发送文件</dt>
+            <dd id="summary-file">-</dd>
+          </div>
+          <div>
             <dt>公钥指纹</dt>
             <dd id="summary-fingerprint">-</dd>
           </div>
@@ -40,30 +64,40 @@
             <dt>公钥创建时间</dt>
             <dd id="summary-key-created">-</dd>
           </div>
-          <div>
-            <dt>待发送文件</dt>
-            <dd id="summary-file">-</dd>
-          </div>
         </dl>
       </section>
 
       <section class="panel">
-        <h2>注册与登录</h2>
-        <form id="register-form" class="form">
-          <label for="register-name">注册新客户端</label>
+        <h2>服务器连接</h2>
+        <form id="server-form" class="form" data-async>
+          <label for="server-host">服务器地址</label>
           <div class="form-row">
-            <input id="register-name" name="clientName" type="text" required>
-            <button type="submit">注册</button>
+            <input id="server-host" name="serverHost" type="text" required placeholder="例如 192.168.1.10">
+            <input id="server-tcp-port" name="serverTcpPort" type="number" min="1" max="65535" required placeholder="TCP 端口">
           </div>
+          <label for="server-http-port">HTTP 接口端口</label>
+          <input id="server-http-port" name="serverHttpPort" type="number" min="1" max="65535" placeholder="留空沿用默认或已有配置">
+          <p class="hint">TCP 端口用于原始文件传输，HTTP 端口用于注册、登录、CRC 等接口。</p>
+          <button type="submit">保存配置</button>
+        </form>
+        <p id="server-message" class="message"></p>
+      </section>
+
+      <section class="panel">
+        <h2>注册与登录</h2>
+        <form id="register-form" class="form" data-async>
+          <label for="register-name">注册新客户端</label>
+          <input id="register-name" name="clientName" type="text" required placeholder="用于区分客户端的名称">
+          <button type="submit">注册</button>
+          <p class="hint">注册后将自动生成密钥对并保存到 transfer.info。</p>
         </form>
 
-        <form id="login-form" class="form">
-          <label for="login-name">使用现有信息登录</label>
-          <div class="form-row">
-            <input id="login-name" name="clientName" type="text" required>
-            <input id="login-id" name="clientId" type="text" required placeholder="客户端 ID">
-            <button type="submit">登录</button>
-          </div>
+        <form id="login-form" class="form" data-async>
+          <label for="login-name">使用已有信息登录</label>
+          <input id="login-name" name="clientName" type="text" required placeholder="客户端名称">
+          <input id="login-id" name="clientId" type="text" required placeholder="服务器颁发的客户端 ID">
+          <button type="submit">登录</button>
+          <p class="hint">登录会请求服务器下发最新的 AES 会话密钥。</p>
         </form>
         <p id="auth-message" class="message"></p>
       </section>
@@ -71,19 +105,21 @@
       <section class="panel">
         <h2>密钥管理</h2>
         <div class="button-group">
-          <button id="generate-keys" type="button">生成/轮换密钥</button>
-          <button id="upload-key" type="button">上传公钥</button>
-          <a id="download-public" class="download" href="/public-key" download>导出公钥</a>
+          <button id="generate-keys" type="button">生成/轮换密钥对</button>
+          <button id="key-exchange" type="button">请求 AES 会话密钥</button>
+          <a id="download-public" class="download" href="/public-key" download>导出当前公钥</a>
         </div>
         <p class="message" id="key-message"></p>
       </section>
 
       <section class="panel">
-        <h2>文件准备</h2>
-        <form id="file-form" class="form" enctype="multipart/form-data">
+        <h2>文件准备与发送</h2>
+        <form id="file-form" class="form" enctype="multipart/form-data" data-async>
           <label for="file-input">选择要发送的文件</label>
           <input id="file-input" name="file" type="file" required>
-          <button type="submit">保存到 uploads/ 并更新 transfer.info</button>
+          <p class="hint">文件会保存到客户端 uploads/ 目录，并写入 transfer.info 的路径。</p>
+          <p class="hint">提交后会自动完成加密并发送到服务器。</p>
+          <button type="submit" class="primary">保存并发送文件</button>
         </form>
         <p class="message" id="file-message"></p>
       </section>

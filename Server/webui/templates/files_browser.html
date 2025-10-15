@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>已保存文件目录</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+  </head>
+  <body class="files-browser">
+    <header class="page-header">
+      <h1>服务器文件目录</h1>
+      <p>根目录：<code>{{ storage_root }}</code></p>
+    </header>
+
+    <main class="layout">
+      {% if listings %}
+        {% for item in listings %}
+          <section class="panel">
+            <h2>{{ item.client }}</h2>
+            <p class="directory">存储路径：<code>{{ item.directory }}</code></p>
+            {% if item.files %}
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>文件名</th>
+                    <th>大小 (B)</th>
+                    <th>修改时间</th>
+                    <th>完整路径</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for file in item.files %}
+                    <tr>
+                      <td>{{ file.name }}</td>
+                      <td>{{ file.size }}</td>
+                      <td>{{ file.modified }}</td>
+                      <td><code>{{ file.full_path }}</code></td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            {% else %}
+              <p class="empty">该目录下没有文件。</p>
+            {% endif %}
+          </section>
+        {% endfor %}
+      {% else %}
+        <p class="empty">尚未接收到任何文件。</p>
+      {% endif %}
+    </main>
+  </body>
+</html>
