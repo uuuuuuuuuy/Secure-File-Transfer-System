@@ -4,10 +4,11 @@ from __future__ import annotations
 from typing import Any, Dict, Optional, Tuple
 
 import requests
+from requests import exceptions as requests_exceptions
 
 
 class RemoteClientError(Exception):
-    pass
+    """Raised when remote interactions fail."""
 
 
 class RemoteClient:
@@ -15,9 +16,14 @@ class RemoteClient:
         self.base_url = base_url.rstrip("/")
         self.session = requests.Session()
 
-    def _request(self, method: str, path: str, *, json: Optional[Dict[str, Any]] = None) -> Tuple[int, Dict[str, Any]]:
+    def _request(
+        self, method: str, path: str, *, json: Optional[Dict[str, Any]] = None
+    ) -> Tuple[int, Dict[str, Any]]:
         url = f"{self.base_url}{path}"
-        response = self.session.request(method, url, json=json, timeout=10)
+        try:
+            response = self.session.request(method, url, json=json, timeout=10)
+        except requests_exceptions.RequestException as exc:
+            raise RemoteClientError(f"无法连接到服务器: {exc}") from exc
         try:
             payload = response.json()
         except ValueError:
@@ -34,10 +40,20 @@ class RemoteClient:
         return data
 
     def login(self, client_name: str, client_id: str) -> Dict[str, Any]:
-        _, data = self._request("POST", "/api/login", json={"clientName": client_name, "clientId": client_id})
+        _, data = self._request(
+            "POST", "/api/login", json={"clientName": client_name, "clientId": client_id}
+        )
         return data
 
     def key_exchange(self, public_key: str) -> Dict[str, Any]:
         _, data = self._request("POST", "/api/key-exchange", json={"publicKey": public_key})
+        return data
+
+    def upload_file(self, filename: str, payload: str, plain_size: int) -> Dict[str, Any]:
+        _, data = self._request(
+            "POST",
+            "/api/upload",
+            json={"fileName": filename, "payload": payload, "plainSize": plain_size},
+        )
         return data
 

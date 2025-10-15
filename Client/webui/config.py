@@ -11,6 +11,8 @@ DEFAULT_REMOTE_HTTP_PORT = int(os.environ.get("CLIENT_WEBUI_REMOTE_HTTP_PORT", 5
 DEFAULT_REMOTE_BASE_URL = os.environ.get("CLIENT_WEBUI_REMOTE_BASE_URL")
 DEFAULT_BIND_PORT = int(os.environ.get("CLIENT_WEBUI_PORT", 5080))
 
+_UNSET = object()
+
 
 @dataclass
 class TransferInfo:
@@ -18,10 +20,17 @@ class TransferInfo:
     server_tcp_port: int
     client_name: Optional[str]
     file_path: Optional[str]
+    server_http_port: Optional[int]
 
     @property
     def server_tcp_endpoint(self) -> str:
         return f"{self.server_host}:{self.server_tcp_port}"
+
+    def server_http_port_or_default(self) -> int:
+        return self.server_http_port or DEFAULT_REMOTE_HTTP_PORT
+
+    def server_http_endpoint(self) -> str:
+        return f"{self.server_host}:{self.server_http_port_or_default()}"
 
 
 class TransferFile:
@@ -33,6 +42,9 @@ class TransferFile:
 
     def exists(self) -> bool:
         return self.path.exists()
+
+    def _ensure_parent(self) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
 
     def read(self) -> TransferInfo:
         if not self.path.exists():
@@ -51,20 +63,50 @@ class TransferFile:
 
         client_name = lines[1].strip() if len(lines) > 1 and lines[1].strip() else None
         file_path = lines[2].strip() if len(lines) > 2 and lines[2].strip() else None
+        http_port = None
+        if len(lines) > 3 and lines[3].strip():
+            http_port = int(lines[3].strip())
 
-        return TransferInfo(host, port, client_name, file_path)
+        return TransferInfo(host, port, client_name, file_path, http_port)
 
-    def update(self, *, client_name: Optional[str] = None, file_path: Optional[str] = None) -> TransferInfo:
+    def write(
+        self,
+        server_host: str,
+        server_tcp_port: int,
+        *,
+        client_name: Optional[str] = None,
+        file_path: Optional[str] = None,
+        server_http_port: Optional[int] = None,
+    ) -> TransferInfo:
+        self._ensure_parent()
+        lines = [f"{server_host}:{server_tcp_port}"]
+        lines.append(client_name or "")
+        lines.append(file_path or "")
+        lines.append(str(server_http_port) if server_http_port else "")
+        self.path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return TransferInfo(server_host, server_tcp_port, client_name, file_path, server_http_port)
+
+    def update(
+        self,
+        *,
+        client_name: Optional[str] = None,
+        file_path: Optional[str] = None,
+        server_http_port: Optional[int] = _UNSET,
+    ) -> TransferInfo:
         info = self.read()
         new_client_name = client_name if client_name is not None else info.client_name
         new_file_path = file_path if file_path is not None else info.file_path
-
-        lines = [info.server_tcp_endpoint]
-        lines.append(new_client_name or "")
-        lines.append(new_file_path or "")
-
-        self.path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        return TransferInfo(info.server_host, info.server_tcp_port, new_client_name, new_file_path)
+        if server_http_port is _UNSET:
+            new_http_port = info.server_http_port
+        else:
+            new_http_port = server_http_port
+        return self.write(
+            info.server_host,
+            info.server_tcp_port,
+            client_name=new_client_name,
+            file_path=new_file_path,
+            server_http_port=new_http_port,
+        )
 
 
 def resolve_remote_base(info: TransferInfo) -> str:
@@ -73,7 +115,7 @@ def resolve_remote_base(info: TransferInfo) -> str:
     if DEFAULT_REMOTE_BASE_URL:
         return DEFAULT_REMOTE_BASE_URL.rstrip("/")
 
-    return f"http://{info.server_host}:{DEFAULT_REMOTE_HTTP_PORT}".rstrip("/")
+    return f"http://{info.server_http_endpoint()}".rstrip("/")
 
 
 def get_base_dir() -> Path:
